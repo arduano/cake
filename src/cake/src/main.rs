@@ -12,7 +12,10 @@ use gfx_hal::{
     queue::QueueGroup,
     window,
 };
-use graphics::device::GDevice;
+use graphics::{
+    device::GDevice,
+    pipeline::{GDescriptorSetLayout, GPipeline, GPipelineBuilder, GPipelineLayout},
+};
 use shaderc::ShaderKind;
 
 use std::{
@@ -21,6 +24,8 @@ use std::{
     iter,
     mem::{self, ManuallyDrop},
     ptr,
+    rc::Rc,
+    sync::Arc,
 };
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -243,11 +248,8 @@ struct Renderer<B: gfx_hal::Backend> {
     viewport: pso::Viewport,
     render_pass: ManuallyDrop<B::RenderPass>,
     framebuffer: ManuallyDrop<B::Framebuffer>,
-    pipeline: ManuallyDrop<B::GraphicsPipeline>,
-    pipeline_layout: ManuallyDrop<B::PipelineLayout>,
-    pipeline_cache: ManuallyDrop<B::PipelineCache>,
+    pipeline: GPipeline<B>,
     desc_set: Option<B::DescriptorSet>,
-    set_layout: ManuallyDrop<B::DescriptorSetLayout>,
     submission_complete_semaphores: Vec<B::Semaphore>,
     submission_complete_fences: Vec<B::Fence>,
     cmd_pools: Vec<B::CommandPool>,
@@ -280,7 +282,7 @@ where
         let limits = adapter.physical_device.properties().limits;
 
         let mut gdevice = GDevice::new(adapter, &surface);
-        let device = &gdevice.logical;
+        let device = gdevice.logical.clone();
 
         let mut command_pool = unsafe {
             device.create_command_pool(gdevice.queues.family, pool::CommandPoolCreateFlags::empty())
@@ -288,35 +290,30 @@ where
         .expect("Can't create command pool");
 
         // Setup renderpass and pipeline
-        let set_layout = ManuallyDrop::new(
-            unsafe {
-                device.create_descriptor_set_layout(
-                    vec![
-                        pso::DescriptorSetLayoutBinding {
-                            binding: 0,
-                            ty: pso::DescriptorType::Image {
-                                ty: pso::ImageDescriptorType::Sampled {
-                                    with_sampler: false,
-                                },
-                            },
-                            count: 1,
-                            stage_flags: ShaderStageFlags::FRAGMENT,
-                            immutable_samplers: false,
+        let set_layout = Arc::new(GDescriptorSetLayout::new(
+            device.clone(),
+            vec![
+                pso::DescriptorSetLayoutBinding {
+                    binding: 0,
+                    ty: pso::DescriptorType::Image {
+                        ty: pso::ImageDescriptorType::Sampled {
+                            with_sampler: false,
                         },
-                        pso::DescriptorSetLayoutBinding {
-                            binding: 1,
-                            ty: pso::DescriptorType::Sampler,
-                            count: 1,
-                            stage_flags: ShaderStageFlags::FRAGMENT,
-                            immutable_samplers: false,
-                        },
-                    ]
-                    .into_iter(),
-                    iter::empty(),
-                )
-            }
-            .expect("Can't create descriptor set layout"),
-        );
+                    },
+                    count: 1,
+                    stage_flags: ShaderStageFlags::FRAGMENT,
+                    immutable_samplers: false,
+                },
+                pso::DescriptorSetLayoutBinding {
+                    binding: 1,
+                    ty: pso::DescriptorType::Sampler,
+                    count: 1,
+                    stage_flags: ShaderStageFlags::FRAGMENT,
+                    immutable_samplers: false,
+                },
+            ]
+            .into_iter(),
+        ));
 
         // Descriptors
         let mut desc_pool = ManuallyDrop::new(
@@ -343,7 +340,7 @@ where
             }
             .expect("Can't create descriptor pool"),
         );
-        let mut desc_set = unsafe { desc_pool.allocate_one(&set_layout) }.unwrap();
+        let mut desc_set = unsafe { desc_pool.allocate_one(&set_layout.layout()) }.unwrap();
 
         // Buffer allocations
         println!("Memory types: {:?}", memory_types);
@@ -766,10 +763,7 @@ where
                 .expect("Can't create pipeline cache")
         });
 
-        let pipeline_layout = ManuallyDrop::new(
-            unsafe { device.create_pipeline_layout(iter::once(&*set_layout), iter::empty()) }
-                .expect("Can't create pipeline layout"),
-        );
+        let pipeline_layout = Arc::new(GPipelineLayout::new(device.clone(), set_layout));
         let pipeline = {
             use graphics::shaders::GShaderModule;
 
@@ -784,7 +778,7 @@ where
                 ShaderKind::Fragment,
             );
 
-            let pipeline = {
+            {
                 let spec = gfx_hal::spec_const_list![0.8f32];
 
                 let subpass = Subpass {
@@ -817,34 +811,16 @@ where
                     },
                 ];
 
-                let mut pipeline_desc = pso::GraphicsPipelineDesc::new(
-                    pso::PrimitiveAssemblerDesc::Vertex {
-                        buffers: &vertex_buffers,
-                        attributes: &attributes,
-                        input_assembler: pso::InputAssemblerDesc {
-                            primitive: pso::Primitive::TriangleList,
-                            with_adjacency: false,
-                            restart_index: None,
-                        },
-                        vertex: vs_module.entrypoint_with(None, Some(spec)),
-                        geometry: None,
-                        tessellation: None,
-                    },
-                    pso::Rasterizer::FILL,
-                    Some(fs_module.entrypoint()),
-                    &*pipeline_layout,
+                GPipelineBuilder::new(
+                    &vertex_buffers,
+                    &attributes,
+                    vs_module.entrypoint_with(None, Some(spec)),
+                    fs_module.entrypoint(),
+                    pipeline_layout,
                     subpass,
-                );
-
-                pipeline_desc.blender.targets.push(pso::ColorBlendDesc {
-                    mask: pso::ColorMask::ALL,
-                    blend: Some(pso::BlendState::ALPHA),
-                });
-
-                unsafe { device.create_graphics_pipeline(&pipeline_desc, Some(&pipeline_cache)) }
-            };
-
-            ManuallyDrop::new(pipeline.unwrap())
+                )
+                .build(device.clone())
+            }
         };
 
         let pipeline_cache_data =
@@ -879,10 +855,7 @@ where
             render_pass,
             framebuffer,
             pipeline,
-            pipeline_layout,
-            pipeline_cache,
             desc_set: Some(desc_set),
-            set_layout,
             submission_complete_semaphores,
             submission_complete_fences,
             cmd_pools,
@@ -972,13 +945,13 @@ where
 
             cmd_buffer.set_viewports(0, iter::once(self.viewport.clone()));
             cmd_buffer.set_scissors(0, iter::once(self.viewport.rect));
-            cmd_buffer.bind_graphics_pipeline(&self.pipeline);
+            cmd_buffer.bind_graphics_pipeline(&self.pipeline.pipeline());
             cmd_buffer.bind_vertex_buffers(
                 0,
                 iter::once((&*self.vertex_buffer, buffer::SubRange::WHOLE)),
             );
             cmd_buffer.bind_graphics_descriptor_sets(
-                &self.pipeline_layout,
+                &self.pipeline.layout().layout(),
                 0,
                 self.desc_set.as_ref().into_iter(),
                 iter::empty(),
@@ -1041,9 +1014,6 @@ where
             // TODO: When ManuallyDrop::take (soon to be renamed to ManuallyDrop::read) is stabilized we should use that instead.
             let _ = self.desc_set.take();
             device.destroy_descriptor_pool(ManuallyDrop::into_inner(ptr::read(&self.desc_pool)));
-            device.destroy_descriptor_set_layout(ManuallyDrop::into_inner(ptr::read(
-                &self.set_layout,
-            )));
 
             device.destroy_buffer(ManuallyDrop::into_inner(ptr::read(&self.vertex_buffer)));
             device.destroy_buffer(ManuallyDrop::into_inner(ptr::read(
@@ -1069,12 +1039,6 @@ where
             device.free_memory(ManuallyDrop::into_inner(ptr::read(
                 &self.image_upload_memory,
             )));
-            device.destroy_graphics_pipeline(ManuallyDrop::into_inner(ptr::read(&self.pipeline)));
-            device.destroy_pipeline_layout(ManuallyDrop::into_inner(ptr::read(
-                &self.pipeline_layout,
-            )));
-            device
-                .destroy_pipeline_cache(ManuallyDrop::into_inner(ptr::read(&self.pipeline_cache)));
             let surface = ManuallyDrop::into_inner(ptr::read(&self.surface));
             self.instance.destroy_surface(surface);
         }

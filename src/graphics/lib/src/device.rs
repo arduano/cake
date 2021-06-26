@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use gfx_hal::{
     adapter::MemoryType,
     prelude::{PhysicalDevice, QueueFamily},
@@ -7,7 +9,7 @@ use gfx_hal::{
 };
 
 pub struct GDevice<B: Backend> {
-    pub logical: B::Device,
+    pub logical: Arc<B::Device>,
     pub physical: B::PhysicalDevice,
     pub queues: QueueGroup<B>,
     pub sparsely_bound: bool,
@@ -45,7 +47,7 @@ impl<B: Backend> GDevice<B> {
         let logical = gpu.device;
 
         GDevice {
-            logical,
+            logical: Arc::new(logical),
             physical,
             queues,
             sparsely_bound,
