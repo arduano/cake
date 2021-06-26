@@ -1,7 +1,7 @@
 use getset::Getters;
 use gfx_hal::{Backend, device::Device, pso::{self, EntryPoint, Specialization}};
 use shaderc::ShaderKind;
-use std::{cell::RefCell, ptr, sync::Arc};
+use std::{cell::RefCell, mem::ManuallyDrop, ptr, sync::Arc};
 
 use crate::device::GDevice;
 
@@ -13,7 +13,7 @@ pub struct GShaderModule<B: Backend> {
     device: Arc<B::Device>,
 
     #[getset(get = "pub")]
-    shader: B::ShaderModule,
+    shader: ManuallyDrop<B::ShaderModule>,
 
     #[getset(get = "pub")]
     kind: ShaderKind,
@@ -38,7 +38,7 @@ impl<B: Backend> GShaderModule<B> {
         GShaderModule {
             device,
             kind,
-            shader,
+            shader: ManuallyDrop::new(shader),
         }
     }
 
@@ -62,7 +62,7 @@ impl<B: Backend> GShaderModule<B> {
 impl<B: Backend> Drop for GShaderModule<B> {
     fn drop(&mut self) {
         unsafe {
-            self.device.destroy_shader_module(ptr::read(&self.shader));
+            self.device.destroy_shader_module(ManuallyDrop::into_inner(ptr::read(&self.shader)));
         }
     }
 }
