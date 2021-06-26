@@ -16,5 +16,5 @@ gfx-auxil = "0.10.0"
 getset = "0.1.1"
 
 [dependencies.gfx-backend]
-package = "gfx-backend-dx12"
+package = "gfx-backend-vulkan"
 version = "0.9.0"

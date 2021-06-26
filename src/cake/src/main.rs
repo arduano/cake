@@ -165,13 +165,7 @@ struct Renderer<B: gfx_hal::Backend> {
     cmd_pools: Vec<B::CommandPool>,
     cmd_buffers: Vec<B::CommandBuffer>,
     vertex_buffer: ManuallyDrop<B::Buffer>,
-    image_upload_buffer: ManuallyDrop<B::Buffer>,
-    image_logo: ManuallyDrop<B::Image>,
-    image_srv: ManuallyDrop<B::ImageView>,
     buffer_memory: ManuallyDrop<B::Memory>,
-    image_memory: ManuallyDrop<B::Memory>,
-    image_upload_memory: ManuallyDrop<B::Memory>,
-    sampler: ManuallyDrop<B::Sampler>,
     frames_in_flight: usize,
     frame: u64,
     // These members are dropped in the declaration order.
@@ -191,10 +185,10 @@ where
         let memory_types = adapter.physical_device.memory_properties().memory_types;
         let limits = adapter.physical_device.properties().limits;
 
-        let mut gdevice = GDevice::new(adapter, &surface);
+        let gdevice = GDevice::new(adapter, &surface);
         let device = gdevice.logical.clone();
 
-        let mut command_pool = unsafe {
+        let command_pool = unsafe {
             device.create_command_pool(gdevice.queues.family, pool::CommandPoolCreateFlags::empty())
         }
         .expect("Can't create command pool");
@@ -202,26 +196,7 @@ where
         // Setup renderpass and pipeline
         let set_layout = Arc::new(GDescriptorSetLayout::new(
             &gdevice,
-            vec![
-                pso::DescriptorSetLayoutBinding {
-                    binding: 0,
-                    ty: pso::DescriptorType::Image {
-                        ty: pso::ImageDescriptorType::Sampled {
-                            with_sampler: false,
-                        },
-                    },
-                    count: 1,
-                    stage_flags: ShaderStageFlags::FRAGMENT,
-                    immutable_samplers: false,
-                },
-                pso::DescriptorSetLayoutBinding {
-                    binding: 1,
-                    ty: pso::DescriptorType::Sampler,
-                    count: 1,
-                    stage_flags: ShaderStageFlags::FRAGMENT,
-                    immutable_samplers: false,
-                },
-            ]
+            vec![]
             .into_iter(),
         ));
 
@@ -250,7 +225,7 @@ where
             }
             .expect("Can't create descriptor pool"),
         );
-        let mut desc_set = unsafe { desc_pool.allocate_one(&set_layout.layout()) }.unwrap();
+        let desc_set = unsafe { desc_pool.allocate_one(&set_layout.layout()) }.unwrap();
 
         // Buffer allocations
         println!("Memory types: {:?}", memory_types);
@@ -305,243 +280,6 @@ where
             device.unmap_memory(&mut memory);
             ManuallyDrop::new(memory)
         };
-
-        // Image
-        let img_data = include_bytes!("./data/logo.png");
-
-        let img = image::load(Cursor::new(&img_data[..]), image::ImageFormat::Png)
-            .unwrap()
-            .to_rgba8();
-        let (width, height) = img.dimensions();
-        let kind = i::Kind::D2(width as i::Size, height as i::Size, 1, 1);
-        let row_alignment_mask = limits.optimal_buffer_copy_pitch_alignment as u32 - 1;
-        let image_stride = 4usize;
-        let row_pitch = (width * image_stride as u32 + row_alignment_mask) & !row_alignment_mask;
-        let upload_size = (height * row_pitch) as u64;
-        let padded_upload_size = ((upload_size + non_coherent_alignment - 1)
-            / non_coherent_alignment)
-            * non_coherent_alignment;
-
-        let mut image_upload_buffer = ManuallyDrop::new(
-            unsafe {
-                device.create_buffer(
-                    padded_upload_size,
-                    buffer::Usage::TRANSFER_SRC,
-                    m::SparseFlags::empty(),
-                )
-            }
-            .unwrap(),
-        );
-        let image_mem_reqs = unsafe { device.get_buffer_requirements(&image_upload_buffer) };
-
-        // copy image data into staging buffer
-        let image_upload_memory = unsafe {
-            let mut memory = device
-                .allocate_memory(upload_type, image_mem_reqs.size)
-                .unwrap();
-            device
-                .bind_buffer_memory(&memory, 0, &mut image_upload_buffer)
-                .unwrap();
-            let mapping = device.map_memory(&mut memory, m::Segment::ALL).unwrap();
-            for y in 0..height as usize {
-                let row = &(*img)[y * (width as usize) * image_stride
-                    ..(y + 1) * (width as usize) * image_stride];
-                ptr::copy_nonoverlapping(
-                    row.as_ptr(),
-                    mapping.offset(y as isize * row_pitch as isize),
-                    width as usize * image_stride,
-                );
-            }
-            device
-                .flush_mapped_memory_ranges(iter::once((&memory, m::Segment::ALL)))
-                .unwrap();
-            device.unmap_memory(&mut memory);
-            ManuallyDrop::new(memory)
-        };
-
-        let mut image_logo = ManuallyDrop::new(
-            unsafe {
-                device.create_image(
-                    kind,
-                    1,
-                    ColorFormat::SELF,
-                    i::Tiling::Optimal,
-                    i::Usage::TRANSFER_DST | i::Usage::SAMPLED,
-                    if gdevice.sparsely_bound {
-                        m::SparseFlags::SPARSE_BINDING | m::SparseFlags::SPARSE_RESIDENCY
-                    } else {
-                        m::SparseFlags::empty()
-                    },
-                    i::ViewCapabilities::empty(),
-                )
-            }
-            .unwrap(),
-        );
-        let image_req = unsafe { device.get_image_requirements(&image_logo) };
-
-        let device_type = memory_types
-            .iter()
-            .enumerate()
-            .position(|(id, memory_type)| {
-                image_req.type_mask & (1 << id) != 0
-                    && memory_type.properties.contains(m::Properties::DEVICE_LOCAL)
-            })
-            .unwrap()
-            .into();
-        let image_memory = ManuallyDrop::new(
-            unsafe { device.allocate_memory(device_type, image_req.size) }.unwrap(),
-        );
-
-        if gdevice.sparsely_bound {
-            println!("Using sparse resource binding");
-            unsafe {
-                gdevice.queues.queues[0].bind_sparse(
-                    std::iter::empty::<&B::Semaphore>(),
-                    std::iter::empty::<&B::Semaphore>(),
-                    std::iter::empty::<(
-                        &mut B::Buffer,
-                        std::iter::Empty<&gfx_hal::memory::SparseBind<&B::Memory>>,
-                    )>(),
-                    std::iter::empty(),
-                    std::iter::once((
-                        &mut *image_logo,
-                        std::iter::once(&gfx_hal::memory::SparseImageBind {
-                            subresource: gfx_hal::image::Subresource {
-                                aspects: gfx_hal::format::Aspects::COLOR,
-                                level: 0,
-                                layer: 0,
-                            },
-                            offset: gfx_hal::image::Offset::ZERO,
-                            extent: gfx_hal::image::Extent {
-                                width,
-                                height,
-                                depth: 1,
-                            },
-                            memory: Some((&*image_memory, 0)),
-                        }),
-                    )),
-                    &device,
-                    None,
-                );
-            }
-        } else {
-            unsafe { device.bind_image_memory(&image_memory, 0, &mut image_logo) }.unwrap();
-        }
-        let image_srv = ManuallyDrop::new(
-            unsafe {
-                device.create_image_view(
-                    &image_logo,
-                    i::ViewKind::D2,
-                    ColorFormat::SELF,
-                    Swizzle::NO,
-                    i::Usage::SAMPLED,
-                    i::SubresourceRange {
-                        aspects: f::Aspects::COLOR,
-                        ..Default::default()
-                    },
-                )
-            }
-            .unwrap(),
-        );
-
-        let sampler = ManuallyDrop::new(
-            unsafe {
-                device.create_sampler(&i::SamplerDesc::new(i::Filter::Linear, i::WrapMode::Clamp))
-            }
-            .expect("Can't create sampler"),
-        );
-
-        unsafe {
-            device.write_descriptor_set(pso::DescriptorSetWrite {
-                set: &mut desc_set,
-                binding: 0,
-                array_offset: 0,
-                descriptors: vec![
-                    pso::Descriptor::Image(&*image_srv, i::Layout::ShaderReadOnlyOptimal),
-                    pso::Descriptor::Sampler(&*sampler),
-                ]
-                .into_iter(),
-            });
-        }
-
-        // copy buffer to texture
-        let mut copy_fence = device.create_fence(false).expect("Could not create fence");
-        unsafe {
-            let mut cmd_buffer = command_pool.allocate_one(command::Level::Primary);
-            cmd_buffer.begin_primary(command::CommandBufferFlags::ONE_TIME_SUBMIT);
-
-            let image_barrier = m::Barrier::Image {
-                states: (i::Access::empty(), i::Layout::Undefined)
-                    ..(i::Access::TRANSFER_WRITE, i::Layout::TransferDstOptimal),
-                target: &*image_logo,
-                families: None,
-                range: i::SubresourceRange {
-                    aspects: f::Aspects::COLOR,
-                    ..Default::default()
-                },
-            };
-
-            cmd_buffer.pipeline_barrier(
-                PipelineStage::TOP_OF_PIPE..PipelineStage::TRANSFER,
-                m::Dependencies::empty(),
-                iter::once(image_barrier),
-            );
-
-            cmd_buffer.copy_buffer_to_image(
-                &image_upload_buffer,
-                &image_logo,
-                i::Layout::TransferDstOptimal,
-                iter::once(command::BufferImageCopy {
-                    buffer_offset: 0,
-                    buffer_width: row_pitch / (image_stride as u32),
-                    buffer_height: height as u32,
-                    image_layers: i::SubresourceLayers {
-                        aspects: f::Aspects::COLOR,
-                        level: 0,
-                        layers: 0..1,
-                    },
-                    image_offset: i::Offset { x: 0, y: 0, z: 0 },
-                    image_extent: i::Extent {
-                        width,
-                        height,
-                        depth: 1,
-                    },
-                }),
-            );
-
-            let image_barrier = m::Barrier::Image {
-                states: (i::Access::TRANSFER_WRITE, i::Layout::TransferDstOptimal)
-                    ..(i::Access::SHADER_READ, i::Layout::ShaderReadOnlyOptimal),
-                target: &*image_logo,
-                families: None,
-                range: i::SubresourceRange {
-                    aspects: f::Aspects::COLOR,
-                    ..Default::default()
-                },
-            };
-            cmd_buffer.pipeline_barrier(
-                PipelineStage::TRANSFER..PipelineStage::FRAGMENT_SHADER,
-                m::Dependencies::empty(),
-                iter::once(image_barrier),
-            );
-
-            cmd_buffer.finish();
-
-            gdevice.queues.queues[0].submit(
-                iter::once(&cmd_buffer),
-                iter::empty(),
-                iter::empty(),
-                Some(&mut copy_fence),
-            );
-
-            device
-                .wait_for_fence(&copy_fence, !0)
-                .expect("Can't wait for fence");
-        }
-
-        unsafe {
-            device.destroy_fence(copy_fence);
-        }
 
         let caps = surface.capabilities(&gdevice.physical);
         let formats = surface.supported_formats(&gdevice.physical);
@@ -710,13 +448,7 @@ where
             cmd_pools,
             cmd_buffers,
             vertex_buffer,
-            image_upload_buffer,
-            image_logo,
-            image_srv,
             buffer_memory,
-            image_memory,
-            image_upload_memory,
-            sampler,
             frames_in_flight,
             frame: 0,
         }
@@ -865,12 +597,6 @@ where
             device.destroy_descriptor_pool(ManuallyDrop::into_inner(ptr::read(&self.desc_pool)));
 
             device.destroy_buffer(ManuallyDrop::into_inner(ptr::read(&self.vertex_buffer)));
-            device.destroy_buffer(ManuallyDrop::into_inner(ptr::read(
-                &self.image_upload_buffer,
-            )));
-            device.destroy_image(ManuallyDrop::into_inner(ptr::read(&self.image_logo)));
-            device.destroy_image_view(ManuallyDrop::into_inner(ptr::read(&self.image_srv)));
-            device.destroy_sampler(ManuallyDrop::into_inner(ptr::read(&self.sampler)));
             for p in self.cmd_pools.drain(..) {
                 device.destroy_command_pool(p);
             }
@@ -883,10 +609,6 @@ where
             device.destroy_framebuffer(ManuallyDrop::into_inner(ptr::read(&self.framebuffer)));
             self.surface.unconfigure_swapchain(&device);
             device.free_memory(ManuallyDrop::into_inner(ptr::read(&self.buffer_memory)));
-            device.free_memory(ManuallyDrop::into_inner(ptr::read(&self.image_memory)));
-            device.free_memory(ManuallyDrop::into_inner(ptr::read(
-                &self.image_upload_memory,
-            )));
             let surface = ManuallyDrop::into_inner(ptr::read(&self.surface));
             self.instance.destroy_surface(surface);
         }
