@@ -91,7 +91,7 @@ fn main() {
 
         renderer.render();
 
-        use std::sync::{Arc, Mutex, RwLock};
+        use std::sync::{Mutex, RwLock};
         use std::thread;
 
         let stopped = Arc::new(RwLock::new(false));
@@ -768,70 +768,58 @@ where
             use graphics::shaders::GShaderModule;
 
             let vs_module = GShaderModule::<B>::new(
-                &device,
+                device.clone(),
                 include_str!("./data/quad.vert"),
                 ShaderKind::Vertex,
             );
             let fs_module = GShaderModule::<B>::new(
-                &device,
+                device.clone(),
                 include_str!("./data/quad.frag"),
                 ShaderKind::Fragment,
             );
 
-            {
-                let spec = gfx_hal::spec_const_list![0.8f32];
+            let spec = gfx_hal::spec_const_list![0.8f32];
 
-                let subpass = Subpass {
-                    index: 0,
-                    main_pass: &*render_pass,
-                };
+            let subpass = Subpass {
+                index: 0,
+                main_pass: &*render_pass,
+            };
 
-                let vertex_buffers = vec![pso::VertexBufferDesc {
+            let vertex_buffers = vec![pso::VertexBufferDesc {
+                binding: 0,
+                stride: mem::size_of::<Vertex>() as u32,
+                rate: VertexInputRate::Vertex,
+            }];
+
+            let attributes = vec![
+                pso::AttributeDesc {
+                    location: 0,
                     binding: 0,
-                    stride: mem::size_of::<Vertex>() as u32,
-                    rate: VertexInputRate::Vertex,
-                }];
-
-                let attributes = vec![
-                    pso::AttributeDesc {
-                        location: 0,
-                        binding: 0,
-                        element: pso::Element {
-                            format: f::Format::Rg32Sfloat,
-                            offset: 0,
-                        },
+                    element: pso::Element {
+                        format: f::Format::Rg32Sfloat,
+                        offset: 0,
                     },
-                    pso::AttributeDesc {
-                        location: 1,
-                        binding: 0,
-                        element: pso::Element {
-                            format: f::Format::Rg32Sfloat,
-                            offset: 8,
-                        },
+                },
+                pso::AttributeDesc {
+                    location: 1,
+                    binding: 0,
+                    element: pso::Element {
+                        format: f::Format::Rg32Sfloat,
+                        offset: 8,
                     },
-                ];
+                },
+            ];
 
-                GPipelineBuilder::new(
-                    &vertex_buffers,
-                    &attributes,
-                    vs_module.entrypoint_with(None, Some(spec)),
-                    fs_module.entrypoint(),
-                    pipeline_layout,
-                    subpass,
-                )
-                .build(device.clone())
-            }
+            GPipelineBuilder::new(
+                &vertex_buffers,
+                &attributes,
+                vs_module.entrypoint_with(None, Some(spec)),
+                fs_module.entrypoint(),
+                pipeline_layout,
+                subpass,
+            )
+            .build(device.clone())
         };
-
-        let pipeline_cache_data =
-            unsafe { device.get_pipeline_cache_data(&pipeline_cache).unwrap() };
-
-        std::fs::write(pipeline_cache_path, &pipeline_cache_data).unwrap();
-        // log::info!(
-        //     "Wrote the pipeline cache to {} ({} bytes)",
-        //     pipeline_cache_path,
-        //     pipeline_cache_data.len()
-        // );
 
         // Rendering setup
         let viewport = pso::Viewport {

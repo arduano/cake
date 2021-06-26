@@ -5,14 +5,14 @@ use gfx_hal::{
     Backend,
 };
 use shaderc::ShaderKind;
-use std::ptr;
+use std::{ptr, sync::Arc};
 
 const ENTRY_NAME: &str = "main";
 
 /// A managed abstraction on top of Backend::ShaderModule
 #[derive(Getters)]
-pub struct GShaderModule<'a, B: Backend> {
-    device: &'a B::Device,
+pub struct GShaderModule<B: Backend> {
+    device: Arc<B::Device>,
 
     #[getset(get = "pub")]
     shader: B::ShaderModule,
@@ -31,8 +31,8 @@ fn compile_shader(glsl: &str, shader_kind: ShaderKind) -> Vec<u32> {
     compiled_shader.as_binary().to_vec()
 }
 
-impl<'a, B: Backend> GShaderModule<'a, B> {
-    pub fn new(device: &'a B::Device, code: &str, kind: ShaderKind) -> GShaderModule<'a, B> {
+impl<B: Backend> GShaderModule<B> {
+    pub fn new(device: Arc<B::Device>, code: &str, kind: ShaderKind) -> GShaderModule<B> {
         let spirv = &compile_shader(code, kind);
         let shader = unsafe { device.create_shader_module(&spirv) }.unwrap();
         GShaderModule {
@@ -59,7 +59,7 @@ impl<'a, B: Backend> GShaderModule<'a, B> {
     }
 }
 
-impl<'a, B: Backend> Drop for GShaderModule<'a, B> {
+impl<B: Backend> Drop for GShaderModule<B> {
     fn drop(&mut self) {
         unsafe {
             self.device.destroy_shader_module(ptr::read(&self.shader));
