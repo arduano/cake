@@ -1,7 +1,8 @@
-extern crate gfx_backend_vulkan as back;
+extern crate gfx_backend as back;
 
 use gfx_hal::{
-    buffer, command, display, format as f,
+    buffer, command, display,
+    format::{self as f, Format},
     format::{AsFormat, ChannelType, Rgba8Srgb as ColorFormat, Swizzle},
     image as i, memory as m, pass,
     pass::Subpass,
@@ -15,6 +16,7 @@ use gfx_hal::{
 use graphics::{
     device::GDevice,
     pipeline::{GDescriptorSetLayout, GPipeline, GPipelineBuilder, GPipelineLayout},
+    render_pass::{GRenderPass, GRenderPassBuilder},
 };
 use shaderc::ShaderKind;
 
@@ -60,184 +62,92 @@ fn main() {
         adapters.remove(0)
     };
 
-    let direct_display = match std::env::var("DIRECT_DISPLAY") {
-        Ok(_) => true,
-        Err(_) => false,
+    let event_loop = winit::event_loop::EventLoop::new();
+
+    let wb = winit::window::WindowBuilder::new()
+        .with_min_inner_size(winit::dpi::Size::Logical(winit::dpi::LogicalSize::new(
+            64.0, 64.0,
+        )))
+        .with_inner_size(winit::dpi::Size::Physical(winit::dpi::PhysicalSize::new(
+            DIMS.width,
+            DIMS.height,
+        )))
+        .with_title("quad".to_string());
+
+    // instantiate backend
+    let window = wb.build(&event_loop).unwrap();
+
+    let surface = unsafe {
+        instance
+            .create_surface(&window)
+            .expect("Failed to create a surface!")
     };
 
-    if !direct_display {
-        let event_loop = winit::event_loop::EventLoop::new();
+    let mut renderer = Renderer::new(instance, surface, adapter);
 
-        let wb = winit::window::WindowBuilder::new()
-            .with_min_inner_size(winit::dpi::Size::Logical(winit::dpi::LogicalSize::new(
-                64.0, 64.0,
-            )))
-            .with_inner_size(winit::dpi::Size::Physical(winit::dpi::PhysicalSize::new(
-                DIMS.width,
-                DIMS.height,
-            )))
-            .with_title("quad".to_string());
+    renderer.render();
 
-        // instantiate backend
-        let window = wb.build(&event_loop).unwrap();
+    use std::sync::{Mutex, RwLock};
+    use std::thread;
 
-        let surface = unsafe {
-            instance
-                .create_surface(&window)
-                .expect("Failed to create a surface!")
-        };
+    let stopped = Arc::new(RwLock::new(false));
 
-        let mut renderer = Renderer::new(instance, surface, adapter);
+    let rend = Arc::new(Mutex::new(renderer));
 
-        renderer.render();
-
-        use std::sync::{Mutex, RwLock};
-        use std::thread;
-
-        let stopped = Arc::new(RwLock::new(false));
-
-        let rend = Arc::new(Mutex::new(renderer));
-
-        let stopped_listener = stopped.clone();
-        let rend2 = rend.clone();
-        thread::spawn(move || loop {
-            let mut r = rend2.lock().unwrap();
-            r.render();
-            {
-                let stopped = *stopped_listener.read().unwrap();
-                if stopped {
-                    break;
-                }
+    let stopped_listener = stopped.clone();
+    let rend2 = rend.clone();
+    thread::spawn(move || loop {
+        let mut r = rend2.lock().unwrap();
+        r.render();
+        {
+            let stopped = *stopped_listener.read().unwrap();
+            if stopped {
+                break;
             }
-        });
+        }
+    });
 
-        // It is important that the closure move captures the Renderer,
-        // otherwise it will not be dropped when the event loop exits.
-        event_loop.run(move |event, _, control_flow| {
-            *control_flow = winit::event_loop::ControlFlow::Poll;
+    // It is important that the closure move captures the Renderer,
+    // otherwise it will not be dropped when the event loop exits.
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = winit::event_loop::ControlFlow::Poll;
 
-            match event {
-                winit::event::Event::WindowEvent { event, .. } => match event {
-                    winit::event::WindowEvent::CloseRequested => {
-                        {
-                            let mut s = stopped.write().unwrap();
-                            *s = true;
-                        }
-                        *control_flow = winit::event_loop::ControlFlow::Exit
+        match event {
+            winit::event::Event::WindowEvent { event, .. } => match event {
+                winit::event::WindowEvent::CloseRequested => {
+                    {
+                        let mut s = stopped.write().unwrap();
+                        *s = true;
                     }
-                    winit::event::WindowEvent::KeyboardInput {
-                        input:
-                            winit::event::KeyboardInput {
-                                virtual_keycode: Some(winit::event::VirtualKeyCode::Escape),
-                                ..
-                            },
-                        ..
-                    } => *control_flow = winit::event_loop::ControlFlow::Exit,
-                    winit::event::WindowEvent::Resized(dims) => {
-                        println!("resized to {:?}", dims);
-                        let mut r = rend.lock().unwrap();
+                    *control_flow = winit::event_loop::ControlFlow::Exit
+                }
+                winit::event::WindowEvent::KeyboardInput {
+                    input:
+                        winit::event::KeyboardInput {
+                            virtual_keycode: Some(winit::event::VirtualKeyCode::Escape),
+                            ..
+                        },
+                    ..
+                } => *control_flow = winit::event_loop::ControlFlow::Exit,
+                winit::event::WindowEvent::Resized(dims) => {
+                    println!("resized to {:?}", dims);
+                    let mut r = rend.lock().unwrap();
 
-                        r.dimensions = window::Extent2D {
-                            width: dims.width,
-                            height: dims.height,
-                        };
-                        r.recreate_swapchain();
-                    }
-                    _ => {}
-                },
-                winit::event::Event::RedrawEventsCleared => {
-                    // let mut r = rend.lock().unwrap();
-                    // r.render();
+                    r.dimensions = window::Extent2D {
+                        width: dims.width,
+                        height: dims.height,
+                    };
+                    r.recreate_swapchain();
                 }
                 _ => {}
+            },
+            winit::event::Event::RedrawEventsCleared => {
+                // let mut r = rend.lock().unwrap();
+                // r.render();
             }
-        });
-    } else {
-        let displays = unsafe { adapter.physical_device.enumerate_displays() };
-        if displays.len() == 0 {
-            panic!("No display is available to create a surface. This means no display is connected or the connected ones are already managed by some other programs. If that is the case, try running the program from a tty terminal.");
+            _ => {}
         }
-        println!("Displays: {:#?}", &displays);
-
-        //Get the first available display
-        let display = &displays[0];
-        println!("Selected display: {:#?}", &display);
-
-        //Enumerate compatible planes
-        let compatible_planes = unsafe {
-            adapter
-                .physical_device
-                .enumerate_compatible_planes(&display)
-        };
-
-        //Get the first available plane (it is granted to have at least 1 plane compatible)
-        let plane = &compatible_planes[0];
-        println!("Plane: {:#?}", &plane);
-
-        //Get the first available display mode (generally the preferred one)
-        let custom_display_mode;
-        let display_mode = match display
-            .modes
-            .iter()
-            .find(|display_mode| display_mode.resolution == DIMS.into())
-        {
-            Some(display_mode) => display_mode,
-            None => {
-                println!("Monitor does not expose the resolution {:#?} as built-in mode, trying to create it",DIMS);
-                match unsafe {
-                    adapter
-                        .physical_device
-                        .create_display_mode(&display, DIMS.into(), 60)
-                } {
-                    Ok(display_mode) => {
-                        custom_display_mode = display_mode;
-                        &custom_display_mode
-                    }
-                    // If was not possible to create custom display mode, use the first built-in mode available
-                    Err(err) => {
-                        println!("Failed to create display mode: {:#?}\nUsing the first display mode available on the monitor",err);
-                        display
-                            .modes
-                            .get(0)
-                            .expect("The selected monitor does not have built-in display modes")
-                    }
-                }
-            }
-        };
-
-        println!("Display mode: {:#?}", &display_mode);
-
-        //Create display plane
-        let display_plane = unsafe {
-            adapter
-                .physical_device
-                .create_display_plane(&display_mode, &plane)
-                .expect("Failed to create display plane")
-        };
-        println!("Display plane: {:#?}", &display_plane);
-
-        //Create a surface from the display
-        let surface = unsafe {
-            instance
-                .create_display_plane_surface(
-                    &display_plane,                      //Display plane
-                    plane.z_index,                       //Z plane index
-                    display::SurfaceTransform::Identity, //Surface transformation
-                    display::DisplayPlaneAlpha::Opaque,  //Opacity
-                    display_plane.dst_extent.end,        //Image extent
-                )
-                .expect("Failed to create a surface!")
-        };
-
-        let mut renderer = Renderer::new(instance, surface, adapter);
-        if display_mode.resolution != DIMS.into() {
-            renderer.dimensions = display_mode.resolution.into();
-            renderer.recreate_swapchain();
-        }
-
-        renderer.render();
-        std::thread::sleep(std::time::Duration::from_secs(5));
-    }
+    });
 }
 
 struct Renderer<B: gfx_hal::Backend> {
@@ -246,7 +156,7 @@ struct Renderer<B: gfx_hal::Backend> {
     format: gfx_hal::format::Format,
     dimensions: window::Extent2D,
     viewport: pso::Viewport,
-    render_pass: ManuallyDrop<B::RenderPass>,
+    render_pass: Arc<GRenderPass<B>>,
     framebuffer: ManuallyDrop<B::Framebuffer>,
     pipeline: GPipeline<B>,
     desc_set: Option<B::DescriptorSet>,
@@ -291,7 +201,7 @@ where
 
         // Setup renderpass and pipeline
         let set_layout = Arc::new(GDescriptorSetLayout::new(
-            device.clone(),
+            &gdevice,
             vec![
                 pso::DescriptorSetLayoutBinding {
                     binding: 0,
@@ -654,48 +564,15 @@ where
                 .expect("Can't configure swapchain");
         };
 
-        let render_pass = {
-            let attachment = pass::Attachment {
-                format: Some(format),
-                samples: 1,
-                ops: pass::AttachmentOps::new(
-                    pass::AttachmentLoadOp::Clear,
-                    pass::AttachmentStoreOp::Store,
-                ),
-                stencil_ops: pass::AttachmentOps::DONT_CARE,
-                layouts: i::Layout::Undefined..i::Layout::Present,
-            };
+        let render_pass = Arc::new(GRenderPassBuilder::new(format).build(&gdevice));
 
-            let subpass = pass::SubpassDesc {
-                colors: &[(0, i::Layout::ColorAttachmentOptimal)],
-                depth_stencil: None,
-                inputs: &[],
-                resolves: &[],
-                preserves: &[],
-            };
-
-            ManuallyDrop::new(
-                unsafe {
-                    device.create_render_pass(
-                        iter::once(attachment),
-                        iter::once(subpass),
-                        iter::empty(),
-                    )
-                }
-                .expect("Can't create render pass"),
-            )
-        };
-
+        let swap_config = window::SwapchainConfig::from_caps(&caps, format, DIMS);
         let framebuffer = ManuallyDrop::new(unsafe {
             device
                 .create_framebuffer(
-                    &render_pass,
+                    &render_pass.render_pass(),
                     iter::once(fat),
-                    i::Extent {
-                        width: DIMS.width,
-                        height: DIMS.height,
-                        depth: 1,
-                    },
+                    swap_config.extent.to_extent(),
                 )
                 .unwrap()
         });
@@ -752,38 +629,22 @@ where
             println!("Error loading the previous pipeline cache data: {}", error);
         }
 
-        let pipeline_cache = ManuallyDrop::new(unsafe {
-            device
-                .create_pipeline_cache(
-                    previous_pipeline_cache_data
-                        .as_ref()
-                        .ok()
-                        .map(|vec| &vec[..]),
-                )
-                .expect("Can't create pipeline cache")
-        });
-
-        let pipeline_layout = Arc::new(GPipelineLayout::new(device.clone(), set_layout));
+        let pipeline_layout = Arc::new(GPipelineLayout::new(&gdevice, set_layout));
         let pipeline = {
             use graphics::shaders::GShaderModule;
 
             let vs_module = GShaderModule::<B>::new(
-                device.clone(),
+                &gdevice,
                 include_str!("./data/quad.vert"),
                 ShaderKind::Vertex,
             );
             let fs_module = GShaderModule::<B>::new(
-                device.clone(),
+                &gdevice,
                 include_str!("./data/quad.frag"),
                 ShaderKind::Fragment,
             );
 
             let spec = gfx_hal::spec_const_list![0.8f32];
-
-            let subpass = Subpass {
-                index: 0,
-                main_pass: &*render_pass,
-            };
 
             let vertex_buffers = vec![pso::VertexBufferDesc {
                 binding: 0,
@@ -816,9 +677,9 @@ where
                 vs_module.entrypoint_with(None, Some(spec)),
                 fs_module.entrypoint(),
                 pipeline_layout,
-                subpass,
+                render_pass.clone(),
             )
-            .build(device.clone())
+            .build(&gdevice)
         };
 
         // Rendering setup
@@ -877,7 +738,7 @@ where
             self.framebuffer = ManuallyDrop::new(
                 device
                     .create_framebuffer(
-                        &self.render_pass,
+                        &self.render_pass.render_pass(),
                         iter::once(swap_config.framebuffer_attachment()),
                         extent,
                     )
@@ -934,19 +795,19 @@ where
             cmd_buffer.set_viewports(0, iter::once(self.viewport.clone()));
             cmd_buffer.set_scissors(0, iter::once(self.viewport.rect));
             cmd_buffer.bind_graphics_pipeline(&self.pipeline.pipeline());
-            cmd_buffer.bind_vertex_buffers(
-                0,
-                iter::once((&*self.vertex_buffer, buffer::SubRange::WHOLE)),
-            );
             cmd_buffer.bind_graphics_descriptor_sets(
                 &self.pipeline.layout().layout(),
                 0,
                 self.desc_set.as_ref().into_iter(),
                 iter::empty(),
             );
+            cmd_buffer.bind_vertex_buffers(
+                0,
+                iter::once((&*self.vertex_buffer, buffer::SubRange::WHOLE)),
+            );
 
             cmd_buffer.begin_render_pass(
-                &self.render_pass,
+                &self.render_pass.render_pass(),
                 &self.framebuffer,
                 self.viewport.rect,
                 iter::once(command::RenderAttachmentInfo {
@@ -1019,7 +880,6 @@ where
             for f in self.submission_complete_fences.drain(..) {
                 device.destroy_fence(f);
             }
-            device.destroy_render_pass(ManuallyDrop::into_inner(ptr::read(&self.render_pass)));
             device.destroy_framebuffer(ManuallyDrop::into_inner(ptr::read(&self.framebuffer)));
             self.surface.unconfigure_swapchain(&device);
             device.free_memory(ManuallyDrop::into_inner(ptr::read(&self.buffer_memory)));

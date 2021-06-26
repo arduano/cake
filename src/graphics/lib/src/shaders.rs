@@ -1,11 +1,9 @@
 use getset::Getters;
-use gfx_hal::{
-    device::Device,
-    pso::{self, Specialization},
-    Backend,
-};
+use gfx_hal::{Backend, device::Device, pso::{self, EntryPoint, Specialization}};
 use shaderc::ShaderKind;
-use std::{ptr, sync::Arc};
+use std::{cell::RefCell, ptr, sync::Arc};
+
+use crate::device::GDevice;
 
 const ENTRY_NAME: &str = "main";
 
@@ -32,7 +30,9 @@ fn compile_shader(glsl: &str, shader_kind: ShaderKind) -> Vec<u32> {
 }
 
 impl<B: Backend> GShaderModule<B> {
-    pub fn new(device: Arc<B::Device>, code: &str, kind: ShaderKind) -> GShaderModule<B> {
+    pub fn new(gdevice: &GDevice<B>, code: &str, kind: ShaderKind) -> GShaderModule<B> {
+        let device = gdevice.logical.clone();
+
         let spirv = &compile_shader(code, kind);
         let shader = unsafe { device.create_shader_module(&spirv) }.unwrap();
         GShaderModule {
@@ -66,3 +66,53 @@ impl<B: Backend> Drop for GShaderModule<B> {
         }
     }
 }
+
+// #[derive(Getters)]
+// pub struct GShaderEntrypoint<'s, B: Backend> {
+//     #[getset(get = "pub")]
+//     entrypoint: Option<pso::EntryPoint<'s, B>>,
+
+//     #[getset(get = "pub")]
+//     shader: Arc<GShaderModule<B>>,
+// }
+
+// impl<'s, B: Backend> GShaderEntrypoint<'s, B> {
+//     // pub fn from(shader: Arc<GShaderModule<B>>) -> GShaderEntrypoint<'s, B> {
+//     //     GShaderEntrypoint::<B>::from_with(shader, None, None)
+//     // }
+
+//     pub fn from_with(
+//         shader: Arc<GShaderModule<B>>,
+//         entry: Option<&'s str>,
+//         specialization: Option<Specialization<'s>>,
+//     ) -> GShaderEntrypoint<'s, B> {
+//         let shader_copy = shader.clone();
+
+//         let gentry = RefCell::new(GShaderEntrypoint {
+//             entrypoint: None,
+//             shader: shader_copy,
+//         });
+
+//         let entrypoint = GShaderEntrypoint::insert(&gentry.borrow(), entry, specialization);
+
+//         gentry.borrow_mut().entrypoint = Some(entrypoint);
+
+//         // let ret = RefCell::into_inner(gentry);
+        
+//         // ret
+//     }
+
+//     fn insert(
+//         parent: &'s GShaderEntrypoint<'s, B>,
+//         entry: Option<&'s str>,
+//         specialization: Option<Specialization<'s>>,
+//     ) -> EntryPoint<'s, B> {
+//         let entrypoint = pso::EntryPoint::<'s, B> {
+//             entry: entry.unwrap_or(ENTRY_NAME),
+//             module: &parent.shader.shader(),
+//             specialization: specialization.unwrap_or(pso::Specialization::default()),
+//         };
+
+//         entrypoint
+//     }
+// }
