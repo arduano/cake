@@ -14,5 +14,5 @@ out gl_PerVertex {
 
 void main() {
     v_uv = a_uv;
-    gl_Position = vec4(scale * a_pos, 0.0, 1.0);
+    gl_Position = vec4(a_pos * 2 - 1, 0, 1);
 }

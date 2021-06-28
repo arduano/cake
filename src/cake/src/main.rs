@@ -42,14 +42,29 @@ struct Vertex {
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 const QUAD: [Vertex; 6] = [
-    Vertex { a_Pos: [ -0.5, 0.33 ], a_Uv: [0.0, 1.0] },
-    Vertex { a_Pos: [  0.5, 0.33 ], a_Uv: [1.0, 1.0] },
-    Vertex { a_Pos: [  0.5,-0.33 ], a_Uv: [1.0, 0.0] },
+    Vertex { a_Pos: [ 0f32, 1f32 ], a_Uv: [0.0, 1.0] },
+    Vertex { a_Pos: [ 1f32, 1f32 ], a_Uv: [1.0, 1.0] },
+    Vertex { a_Pos: [ 1f32, 0f32 ], a_Uv: [1.0, 0.0] },
 
-    Vertex { a_Pos: [ -0.5, 0.33 ], a_Uv: [0.0, 1.0] },
-    Vertex { a_Pos: [  0.5,-0.33 ], a_Uv: [1.0, 0.0] },
-    Vertex { a_Pos: [ -0.5,-0.33 ], a_Uv: [0.0, 0.0] },
+    Vertex { a_Pos: [ 0f32, 1f32 ], a_Uv: [0.0, 1.0] },
+    Vertex { a_Pos: [ 1f32, 0f32 ], a_Uv: [1.0, 0.0] },
+    Vertex { a_Pos: [ 0f32, 0f32 ], a_Uv: [0.0, 0.0] },
 ];
+
+struct IntVector4 {
+    val1: i32,
+    val2: i32,
+    val3: i32,
+    val4: i32,
+}
+
+struct UniformData {
+    width: i32,
+    height: i32,
+    start: i32,
+    end: i32,
+    key_count: i32,
+}
 
 fn main() {
     let instance = back::Instance::create("gfx-rs quad", 1).expect("Failed to create an instance!");
@@ -194,11 +209,7 @@ where
         .expect("Can't create command pool");
 
         // Setup renderpass and pipeline
-        let set_layout = Arc::new(GDescriptorSetLayout::new(
-            &gdevice,
-            vec![]
-            .into_iter(),
-        ));
+        let set_layout = Arc::new(GDescriptorSetLayout::new(&gdevice, vec![].into_iter()));
 
         // Descriptors
         let mut desc_pool = ManuallyDrop::new(
