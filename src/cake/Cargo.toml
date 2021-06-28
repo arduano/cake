@@ -21,3 +21,6 @@ cgmath = "0.18"
 futures = "0.3"
 imgui-winit-support = "0.7"
 wgpu-subscriber = "0.1"
+
+[build-dependencies]
+shaderc = "0.7.2"
