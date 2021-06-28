@@ -261,10 +261,8 @@ impl Example {
         });
 
         // Create the render pipeline
-        let vs_module =
-            device.create_shader_module(&wgpu::include_spirv!("data\\cube.vert.spv"));
-        let fs_module =
-            device.create_shader_module(&wgpu::include_spirv!("data\\cube.frag.spv"));
+        let vs_module = device.create_shader_module(&wgpu::include_spirv!("data\\cube.vert.spv"));
+        let fs_module = device.create_shader_module(&wgpu::include_spirv!("data\\cube.frag.spv"));
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
@@ -550,6 +548,34 @@ fn main() {
 
                 // Store the new size of Image() or None to indicate that the window is collapsed.
                 let mut new_example_size: Option<[f32; 2]> = None;
+
+                let size = window.inner_size();
+
+                let nopadding = ui.push_style_vars(&[StyleVar::WindowPadding([-1.0, -1.0]), StyleVar::WindowBorderSize(0.0)]);
+
+                imgui::Window::new(im_str!("Root"))
+                    .no_nav()
+                    .title_bar(false)
+                    .draw_background(false)
+                    .movable(false)
+                    .scrollable(false)
+                    .bring_to_front_on_focus(false)
+                    .collapsible(false)
+                    .resizable(false)
+                    .collapsed(false, Condition::Always)
+                    .always_use_window_padding(false)
+                    .size([size.width as f32, size.height as f32], Condition::Always)
+                    .position([0.0, 0.0], Condition::Always)
+                    .build(&ui, || {
+                        new_example_size = Some(ui.content_region_avail());
+                        imgui::Image::new(example_texture_id, new_example_size.unwrap()).build(&ui);
+                        ui.get_window_draw_list()
+                            .add_rect([0.0, 0.0], [100.0, 100.0], ImColor32::BLACK)
+                            .filled(true)
+                            .build();
+                    });
+
+                nopadding.pop(&ui);
 
                 imgui::Window::new(im_str!("Cube"))
                     .size([512.0, 512.0], Condition::FirstUseEver)
