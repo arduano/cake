@@ -11,7 +11,8 @@
             "cwd": "${workspaceRoot}",
             "environment": [],
             "console": "integratedTerminal",
-            "preLaunchTask": "${defaultBuildTask}"
+            "preLaunchTask": "${defaultBuildTask}",
+            "env": { "RUST_BACKTRACE": "1" }
         }
     ]
 }

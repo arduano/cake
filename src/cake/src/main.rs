@@ -2,6 +2,8 @@ use bytemuck::{Pod, Zeroable};
 use futures::executor::block_on;
 use imgui::*;
 use imgui_wgpu::{Renderer, RendererConfig, Texture, TextureConfig};
+use std::fs::{self, File};
+use std::io::Read;
 use std::num::NonZeroU32;
 use std::time::Instant;
 use wgpu::{util::DeviceExt, BlendState, Extent3d};
@@ -12,22 +14,36 @@ use winit::{
     window::Window,
 };
 
-// Example code modified from https://github.com/gfx-rs/wgpu-rs/tree/master/examples/cube
+#[repr(C)]
+#[derive(Pod, Copy, Clone, Zeroable)]
+struct RenderUniform {
+    width: i32,
+    height: i32,
+    start: i32,
+    end: i32,
+}
 
-const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
-    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5, 1.0,
-);
+impl RenderUniform {
+    pub fn default() -> Self {
+        RenderUniform {
+            end: 0,
+            start: 0,
+            width: 0,
+            height: 0,
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct Vertex {
-    _pos: [f32; 4],
+    _pos: [f32; 2],
     _tex_coord: [f32; 2],
 }
 
-fn vertex(pos: [i8; 3], tc: [i8; 2]) -> Vertex {
+fn vertex(pos: [i8; 2], tc: [i8; 2]) -> Vertex {
     Vertex {
-        _pos: [pos[0] as f32, pos[1] as f32, pos[2] as f32, 1.0],
+        _pos: [pos[0] as f32, pos[1] as f32],
         _tex_coord: [tc[0] as f32, tc[1] as f32],
     }
 }
@@ -35,45 +51,13 @@ fn vertex(pos: [i8; 3], tc: [i8; 2]) -> Vertex {
 fn create_vertices() -> (Vec<Vertex>, Vec<u16>) {
     let vertex_data = [
         // top (0, 0, 1)
-        vertex([-1, -1, 1], [0, 0]),
-        vertex([1, -1, 1], [1, 0]),
-        vertex([1, 1, 1], [1, 1]),
-        vertex([-1, 1, 1], [0, 1]),
-        // bottom (0, 0, -1)
-        vertex([-1, 1, -1], [1, 0]),
-        vertex([1, 1, -1], [0, 0]),
-        vertex([1, -1, -1], [0, 1]),
-        vertex([-1, -1, -1], [1, 1]),
-        // right (1, 0, 0)
-        vertex([1, -1, -1], [0, 0]),
-        vertex([1, 1, -1], [1, 0]),
-        vertex([1, 1, 1], [1, 1]),
-        vertex([1, -1, 1], [0, 1]),
-        // left (-1, 0, 0)
-        vertex([-1, -1, 1], [1, 0]),
-        vertex([-1, 1, 1], [0, 0]),
-        vertex([-1, 1, -1], [0, 1]),
-        vertex([-1, -1, -1], [1, 1]),
-        // front (0, 1, 0)
-        vertex([1, 1, -1], [1, 0]),
-        vertex([-1, 1, -1], [0, 0]),
-        vertex([-1, 1, 1], [0, 1]),
-        vertex([1, 1, 1], [1, 1]),
-        // back (0, -1, 0)
-        vertex([1, -1, 1], [0, 0]),
-        vertex([-1, -1, 1], [1, 0]),
-        vertex([-1, -1, -1], [1, 1]),
-        vertex([1, -1, -1], [0, 1]),
+        vertex([-1, -1], [0, 0]),
+        vertex([1, -1], [1, 0]),
+        vertex([1, 1], [1, 1]),
+        vertex([-1, 1], [0, 1]),
     ];
 
-    let index_data: &[u16] = &[
-        0, 1, 2, 2, 3, 0, // top
-        4, 5, 6, 6, 7, 4, // bottom
-        8, 9, 10, 10, 11, 8, // right
-        12, 13, 14, 14, 15, 12, // left
-        16, 17, 18, 18, 19, 16, // front
-        20, 21, 22, 22, 23, 20, // back
-    ];
+    let index_data: &[u16] = &[0, 1, 2, 2, 3, 0];
 
     (vertex_data.to_vec(), index_data.to_vec())
 }
@@ -112,19 +96,6 @@ struct Example {
 }
 
 impl Example {
-    fn generate_matrix(aspect_ratio: f32, theta: f32) -> cgmath::Matrix4<f32> {
-        let mx_projection = cgmath::perspective(cgmath::Deg(45f32), aspect_ratio, 1.0, 10.0);
-        let mx_view = cgmath::Matrix4::look_at(
-            cgmath::Point3::new(6.0 * theta.cos(), 6.0 * theta.sin(), 3.0),
-            cgmath::Point3::new(0f32, 0.0, 0.0),
-            cgmath::Vector3::unit_z(),
-        );
-        let mx_correction = OPENGL_TO_WGPU_MATRIX;
-        mx_correction * mx_projection * mx_view
-    }
-}
-
-impl Example {
     fn init(
         sc_desc: &wgpu::SwapChainDescriptor,
         device: &wgpu::Device,
@@ -154,7 +125,7 @@ impl Example {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStage::VERTEX,
+                    visibility: wgpu::ShaderStage::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -165,19 +136,10 @@ impl Example {
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler {
-                        filtering: true,
-                        comparison: false,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(64),
                     },
                     count: None,
                 },
@@ -232,12 +194,22 @@ impl Example {
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
-        let mx_total = Self::generate_matrix(sc_desc.width as f32 / sc_desc.height as f32, 0.0);
-        let mx_ref: &[f32; 16] = mx_total.as_ref();
+        let data_total = RenderUniform::default();
         let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Uniform Buffer"),
-            contents: bytemuck::cast_slice(mx_ref),
             usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            contents: bytemuck::cast_slice(&[data_total, data_total, data_total, data_total]),
+        });
+
+        let mut f = File::open("./cake-cache.dat").expect("no file found");
+        let metadata = fs::metadata("./cake-cache.dat").expect("unable to read metadata");
+        let mut buffer = vec![0; metadata.len() as usize];
+        f.read(&mut buffer).expect("buffer overflow");
+
+        let cake_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Uniform Buffer"),
+            usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
+            contents: &buffer,
         });
 
         // Create bind group
@@ -250,19 +222,15 @@ impl Example {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
+                    resource: cake_buf.as_entire_binding(),
                 },
             ],
             label: None,
         });
 
         // Create the render pipeline
-        let vs_module = device.create_shader_module(&wgpu::include_spirv!("data\\cube.vert.spv"));
-        let fs_module = device.create_shader_module(&wgpu::include_spirv!("data\\cube.frag.spv"));
+        let vs_module = device.create_shader_module(&wgpu::include_spirv!("data\\cake.vert.spv"));
+        let fs_module = device.create_shader_module(&wgpu::include_spirv!("data\\cake.frag.spv"));
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
@@ -275,13 +243,13 @@ impl Example {
                     step_mode: wgpu::InputStepMode::Vertex,
                     attributes: &[
                         wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x4,
+                            format: wgpu::VertexFormat::Float32x2,
                             offset: 0,
                             shader_location: 0,
                         },
                         wgpu::VertexAttribute {
                             format: wgpu::VertexFormat::Float32x2,
-                            offset: 4 * 4,
+                            offset: 2 * 4,
                             shader_location: 1,
                         },
                     ],
@@ -324,10 +292,18 @@ impl Example {
         self.time += delta_time;
     }
 
-    fn setup_camera(&mut self, queue: &wgpu::Queue, size: [f32; 2]) {
-        let mx_total = Self::generate_matrix(size[0] / size[1], self.time * 0.1);
-        let mx_ref: &[f32; 16] = mx_total.as_ref();
-        queue.write_buffer(&self.uniform_buf, 0, bytemuck::cast_slice(mx_ref));
+    fn setup_camera(&mut self, queue: &wgpu::Queue, size: [i32; 2]) {
+        let mx_total = RenderUniform {
+            end: 497231,
+            start: 0,
+            width: size[0],
+            height: size[1],
+        };
+        queue.write_buffer(
+            &self.uniform_buf,
+            0,
+            bytemuck::cast_slice(&[mx_total, mx_total, mx_total, mx_total]),
+        );
     }
 
     fn render(&mut self, view: &wgpu::TextureView, device: &wgpu::Device, queue: &wgpu::Queue) {
@@ -543,7 +519,8 @@ fn main() {
 
                 // Render example normally at background
                 example.update(ui.io().delta_time);
-                example.setup_camera(&queue, ui.io().display_size);
+                let size = ui.io().display_size;
+                example.setup_camera(&queue, [size[0] as i32, size[1] as i32]);
                 example.render(&frame.output.view, &device, &queue);
 
                 // Store the new size of Image() or None to indicate that the window is collapsed.
@@ -551,7 +528,10 @@ fn main() {
 
                 let size = window.inner_size();
 
-                let nopadding = ui.push_style_vars(&[StyleVar::WindowPadding([-1.0, -1.0]), StyleVar::WindowBorderSize(0.0)]);
+                let nopadding = ui.push_style_vars(&[
+                    StyleVar::WindowPadding([-1.0, -1.0]),
+                    StyleVar::WindowBorderSize(0.0),
+                ]);
 
                 imgui::Window::new(im_str!("Root"))
                     .no_nav()
@@ -606,7 +586,8 @@ fn main() {
                     }
 
                     // Only render example to example_texture if thw window is not collapsed
-                    example.setup_camera(&queue, size);
+                    let size = ui.io().display_size;
+                    example.setup_camera(&queue, [size[0] as i32, size[1] as i32]);
                     example.render(
                         &renderer.textures.get(example_texture_id).unwrap().view(),
                         &device,
