@@ -1,628 +1,626 @@
-extern crate gfx_backend as back;
-
-use gfx_hal::{
-    buffer, command, display,
-    format::{self as f, Format},
-    format::{AsFormat, ChannelType, Rgba8Srgb as ColorFormat, Swizzle},
-    image as i, memory as m, pass,
-    pass::Subpass,
-    pool,
-    prelude::*,
-    pso,
-    pso::{PipelineStage, ShaderStageFlags, VertexInputRate},
-    queue::QueueGroup,
-    window,
-};
-use graphics::{
-    device::GDevice,
-    pipeline::{GDescriptorSetLayout, GPipeline, GPipelineBuilder, GPipelineLayout},
-    render_pass::{GRenderPass, GRenderPassBuilder},
-};
-use shaderc::ShaderKind;
-
-use std::{
-    borrow::{Borrow, BorrowMut},
-    io::Cursor,
-    iter,
-    mem::{self, ManuallyDrop},
-    ptr,
-    rc::Rc,
-    sync::Arc,
+use bytemuck::{Pod, Zeroable};
+use futures::executor::block_on;
+use imgui::*;
+use imgui_wgpu::{Renderer, RendererConfig, Texture, TextureConfig};
+use std::num::NonZeroU32;
+use std::time::Instant;
+use wgpu::{util::DeviceExt, BlendState, Extent3d};
+use winit::{
+    dpi::LogicalSize,
+    event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    window::Window,
 };
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-const DIMS: window::Extent2D = window::Extent2D { width: 1024, height: 768 };
+// Example code modified from https://github.com/gfx-rs/wgpu-rs/tree/master/examples/cube
 
-#[derive(Debug, Clone, Copy)]
-#[allow(non_snake_case)]
+const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
+    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5, 1.0,
+);
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 struct Vertex {
-    a_Pos: [f32; 2],
-    a_Uv: [f32; 2],
+    _pos: [f32; 4],
+    _tex_coord: [f32; 2],
 }
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-const QUAD: [Vertex; 6] = [
-    Vertex { a_Pos: [ 0f32, 1f32 ], a_Uv: [0.0, 1.0] },
-    Vertex { a_Pos: [ 1f32, 1f32 ], a_Uv: [1.0, 1.0] },
-    Vertex { a_Pos: [ 1f32, 0f32 ], a_Uv: [1.0, 0.0] },
-
-    Vertex { a_Pos: [ 0f32, 1f32 ], a_Uv: [0.0, 1.0] },
-    Vertex { a_Pos: [ 1f32, 0f32 ], a_Uv: [1.0, 0.0] },
-    Vertex { a_Pos: [ 0f32, 0f32 ], a_Uv: [0.0, 0.0] },
-];
-
-struct IntVector4 {
-    val1: i32,
-    val2: i32,
-    val3: i32,
-    val4: i32,
+fn vertex(pos: [i8; 3], tc: [i8; 2]) -> Vertex {
+    Vertex {
+        _pos: [pos[0] as f32, pos[1] as f32, pos[2] as f32, 1.0],
+        _tex_coord: [tc[0] as f32, tc[1] as f32],
+    }
 }
 
-struct UniformData {
-    width: i32,
-    height: i32,
-    start: i32,
-    end: i32,
-    key_count: i32,
+fn create_vertices() -> (Vec<Vertex>, Vec<u16>) {
+    let vertex_data = [
+        // top (0, 0, 1)
+        vertex([-1, -1, 1], [0, 0]),
+        vertex([1, -1, 1], [1, 0]),
+        vertex([1, 1, 1], [1, 1]),
+        vertex([-1, 1, 1], [0, 1]),
+        // bottom (0, 0, -1)
+        vertex([-1, 1, -1], [1, 0]),
+        vertex([1, 1, -1], [0, 0]),
+        vertex([1, -1, -1], [0, 1]),
+        vertex([-1, -1, -1], [1, 1]),
+        // right (1, 0, 0)
+        vertex([1, -1, -1], [0, 0]),
+        vertex([1, 1, -1], [1, 0]),
+        vertex([1, 1, 1], [1, 1]),
+        vertex([1, -1, 1], [0, 1]),
+        // left (-1, 0, 0)
+        vertex([-1, -1, 1], [1, 0]),
+        vertex([-1, 1, 1], [0, 0]),
+        vertex([-1, 1, -1], [0, 1]),
+        vertex([-1, -1, -1], [1, 1]),
+        // front (0, 1, 0)
+        vertex([1, 1, -1], [1, 0]),
+        vertex([-1, 1, -1], [0, 0]),
+        vertex([-1, 1, 1], [0, 1]),
+        vertex([1, 1, 1], [1, 1]),
+        // back (0, -1, 0)
+        vertex([1, -1, 1], [0, 0]),
+        vertex([-1, -1, 1], [1, 0]),
+        vertex([-1, -1, -1], [1, 1]),
+        vertex([1, -1, -1], [0, 1]),
+    ];
+
+    let index_data: &[u16] = &[
+        0, 1, 2, 2, 3, 0, // top
+        4, 5, 6, 6, 7, 4, // bottom
+        8, 9, 10, 10, 11, 8, // right
+        12, 13, 14, 14, 15, 12, // left
+        16, 17, 18, 18, 19, 16, // front
+        20, 21, 22, 22, 23, 20, // back
+    ];
+
+    (vertex_data.to_vec(), index_data.to_vec())
+}
+
+fn create_texels(size: usize) -> Vec<u8> {
+    use std::iter;
+
+    (0..size * size)
+        .flat_map(|id| {
+            // get high five for recognizing this ;)
+            let cx = 3.0 * (id % size) as f32 / (size - 1) as f32 - 2.0;
+            let cy = 2.0 * (id / size) as f32 / (size - 1) as f32 - 1.0;
+            let (mut x, mut y, mut count) = (cx, cy, 0);
+            while count < 0xFF && x * x + y * y < 4.0 {
+                let old_x = x;
+                x = x * x - y * y + cx;
+                y = 2.0 * old_x * y + cy;
+                count += 1;
+            }
+            iter::once(0xFF - (count * 5) as u8)
+                .chain(iter::once(0xFF - (count * 15) as u8))
+                .chain(iter::once(0xFF - (count * 50) as u8))
+                .chain(iter::once(1))
+        })
+        .collect()
+}
+
+struct Example {
+    vertex_buf: wgpu::Buffer,
+    index_buf: wgpu::Buffer,
+    index_count: usize,
+    bind_group: wgpu::BindGroup,
+    uniform_buf: wgpu::Buffer,
+    pipeline: wgpu::RenderPipeline,
+    time: f32,
+}
+
+impl Example {
+    fn generate_matrix(aspect_ratio: f32, theta: f32) -> cgmath::Matrix4<f32> {
+        let mx_projection = cgmath::perspective(cgmath::Deg(45f32), aspect_ratio, 1.0, 10.0);
+        let mx_view = cgmath::Matrix4::look_at(
+            cgmath::Point3::new(6.0 * theta.cos(), 6.0 * theta.sin(), 3.0),
+            cgmath::Point3::new(0f32, 0.0, 0.0),
+            cgmath::Vector3::unit_z(),
+        );
+        let mx_correction = OPENGL_TO_WGPU_MATRIX;
+        mx_correction * mx_projection * mx_view
+    }
+}
+
+impl Example {
+    fn init(
+        sc_desc: &wgpu::SwapChainDescriptor,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Self {
+        use std::mem;
+
+        // Create the vertex and index buffers
+        let vertex_size = mem::size_of::<Vertex>();
+        let (vertex_data, index_data) = create_vertices();
+
+        let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(&vertex_data),
+            usage: wgpu::BufferUsage::VERTEX,
+        });
+
+        let index_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(&index_data),
+            usage: wgpu::BufferUsage::INDEX,
+        });
+
+        // Create pipeline layout
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: None,
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(64),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler {
+                        filtering: true,
+                        comparison: false,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        // Create the texture
+        let size = 256u32;
+        let texels = create_texels(size as usize);
+        let texture_extent = wgpu::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: 1,
+        };
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: texture_extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
+        });
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+            },
+            &texels,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: NonZeroU32::new(4 * size),
+                rows_per_image: None,
+            },
+            texture_extent,
+        );
+
+        // Create other resources
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        let mx_total = Self::generate_matrix(sc_desc.width as f32 / sc_desc.height as f32, 0.0);
+        let mx_ref: &[f32; 16] = mx_total.as_ref();
+        let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Uniform Buffer"),
+            contents: bytemuck::cast_slice(mx_ref),
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        });
+
+        // Create bind group
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+            label: None,
+        });
+
+        // Create the render pipeline
+        let vs_module =
+            device.create_shader_module(&wgpu::include_spirv!("data\\cube.vert.spv"));
+        let fs_module =
+            device.create_shader_module(&wgpu::include_spirv!("data\\cube.frag.spv"));
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: None,
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &vs_module,
+                entry_point: "main",
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: vertex_size as wgpu::BufferAddress,
+                    step_mode: wgpu::InputStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x4,
+                            offset: 0,
+                            shader_location: 0,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x2,
+                            offset: 4 * 4,
+                            shader_location: 1,
+                        },
+                    ],
+                }],
+            },
+            primitive: wgpu::PrimitiveState {
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &fs_module,
+                entry_point: "main",
+                targets: &[wgpu::ColorTargetState {
+                    format: sc_desc.format,
+                    blend: Some(BlendState {
+                        color: wgpu::BlendComponent::REPLACE,
+                        alpha: wgpu::BlendComponent::REPLACE,
+                    }),
+                    write_mask: wgpu::ColorWrite::ALL,
+                }],
+            }),
+        });
+
+        // Done
+        Example {
+            vertex_buf,
+            index_buf,
+            index_count: index_data.len(),
+            bind_group,
+            uniform_buf,
+            pipeline,
+            time: 0.0,
+        }
+    }
+
+    fn update(&mut self, delta_time: f32) {
+        self.time += delta_time;
+    }
+
+    fn setup_camera(&mut self, queue: &wgpu::Queue, size: [f32; 2]) {
+        let mx_total = Self::generate_matrix(size[0] / size[1], self.time * 0.1);
+        let mx_ref: &[f32; 16] = mx_total.as_ref();
+        queue.write_buffer(&self.uniform_buf, 0, bytemuck::cast_slice(mx_ref));
+    }
+
+    fn render(&mut self, view: &wgpu::TextureView, device: &wgpu::Device, queue: &wgpu::Queue) {
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.2,
+                            b: 0.3,
+                            a: 0.1, // semi-transparent background
+                        }),
+                        store: true,
+                    },
+                }],
+                depth_stencil_attachment: None,
+            });
+            rpass.push_debug_group("Prepare data for draw.");
+            rpass.set_pipeline(&self.pipeline);
+            rpass.set_bind_group(0, &self.bind_group, &[]);
+            rpass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint16);
+            rpass.set_vertex_buffer(0, self.vertex_buf.slice(..));
+            rpass.pop_debug_group();
+            rpass.insert_debug_marker("Draw!");
+            rpass.draw_indexed(0..self.index_count as u32, 0, 0..1);
+        }
+
+        queue.submit(Some(encoder.finish()));
+    }
 }
 
 fn main() {
-    let instance = back::Instance::create("gfx-rs quad", 1).expect("Failed to create an instance!");
+    wgpu_subscriber::initialize_default_subscriber(None);
 
-    let adapter = {
-        let mut adapters = instance.enumerate_adapters();
-        for adapter in &adapters {
-            println!("{:?}", adapter.info);
-        }
-        adapters.remove(0)
+    // Set up window and GPU
+    let event_loop = EventLoop::new();
+
+    let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
+
+    let (window, size, surface) = {
+        let version = env!("CARGO_PKG_VERSION");
+
+        let window = Window::new(&event_loop).unwrap();
+        window.set_inner_size(LogicalSize {
+            width: 1280.0,
+            height: 720.0,
+        });
+        window.set_title(&format!("imgui-wgpu {}", version));
+        let size = window.inner_size();
+
+        let surface = unsafe { instance.create_surface(&window) };
+
+        (window, size, surface)
     };
 
-    let event_loop = winit::event_loop::EventLoop::new();
+    let hidpi_factor = window.scale_factor();
 
-    let wb = winit::window::WindowBuilder::new()
-        .with_min_inner_size(winit::dpi::Size::Logical(winit::dpi::LogicalSize::new(
-            64.0, 64.0,
-        )))
-        .with_inner_size(winit::dpi::Size::Physical(winit::dpi::PhysicalSize::new(
-            DIMS.width,
-            DIMS.height,
-        )))
-        .with_title("quad".to_string());
+    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: Some(&surface),
+    }))
+    .unwrap();
 
-    // instantiate backend
-    let window = wb.build(&event_loop).unwrap();
+    let (device, queue) = block_on(adapter.request_device(
+        &wgpu::DeviceDescriptor {
+            label: None,
+            features: wgpu::Features::empty(),
+            limits: wgpu::Limits::default(),
+        },
+        None,
+    ))
+    .unwrap();
 
-    let surface = unsafe {
-        instance
-            .create_surface(&window)
-            .expect("Failed to create a surface!")
+    // Set up swap chain
+    let sc_desc = wgpu::SwapChainDescriptor {
+        usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
+        format: wgpu::TextureFormat::Bgra8UnormSrgb,
+        width: size.width as u32,
+        height: size.height as u32,
+        present_mode: wgpu::PresentMode::Mailbox,
     };
 
-    let mut renderer = Renderer::new(instance, surface, adapter);
+    let mut swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
-    renderer.render();
+    // Set up dear imgui
+    let mut imgui = imgui::Context::create();
+    let mut platform = imgui_winit_support::WinitPlatform::init(&mut imgui);
+    platform.attach_window(
+        imgui.io_mut(),
+        &window,
+        imgui_winit_support::HiDpiMode::Default,
+    );
+    imgui.set_ini_filename(None);
 
-    use std::sync::{Mutex, RwLock};
-    use std::thread;
+    let font_size = (13.0 * hidpi_factor) as f32;
+    imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
 
-    let stopped = Arc::new(RwLock::new(false));
+    imgui.fonts().add_font(&[FontSource::DefaultFontData {
+        config: Some(imgui::FontConfig {
+            oversample_h: 1,
+            pixel_snap_h: true,
+            size_pixels: font_size,
+            ..Default::default()
+        }),
+    }]);
 
-    let rend = Arc::new(Mutex::new(renderer));
+    //
+    // Set up dear imgui wgpu renderer
+    //
+    // let clear_color = wgpu::Color {
+    //     r: 0.1,
+    //     g: 0.2,
+    //     b: 0.3,
+    //     a: 1.0,
+    // };
 
-    let stopped_listener = stopped.clone();
-    let rend2 = rend.clone();
-    thread::spawn(move || loop {
-        let mut r = rend2.lock().unwrap();
-        r.render();
-        {
-            let stopped = *stopped_listener.read().unwrap();
-            if stopped {
-                break;
-            }
-        }
-    });
+    let renderer_config = RendererConfig {
+        texture_format: sc_desc.format,
+        ..Default::default()
+    };
 
-    // It is important that the closure move captures the Renderer,
-    // otherwise it will not be dropped when the event loop exits.
+    let mut renderer = Renderer::new(&mut imgui, &device, &queue, renderer_config);
+
+    let mut last_frame = Instant::now();
+
+    let mut last_cursor = None;
+
+    let mut example_size: [f32; 2] = [640.0, 480.0];
+    let mut example = Example::init(&sc_desc, &device, &queue);
+
+    // Stores a texture for displaying with imgui::Image(),
+    // also as a texture view for rendering into it
+
+    let texture_config = TextureConfig {
+        size: wgpu::Extent3d {
+            width: example_size[0] as u32,
+            height: example_size[1] as u32,
+            ..Default::default()
+        },
+        usage: wgpu::TextureUsage::RENDER_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
+        ..Default::default()
+    };
+
+    let texture = Texture::new(&device, &renderer, texture_config);
+    let example_texture_id = renderer.textures.insert(texture);
+
+    // Event loop
     event_loop.run(move |event, _, control_flow| {
-        *control_flow = winit::event_loop::ControlFlow::Poll;
-
+        *control_flow = if cfg!(feature = "metal-auto-capture") {
+            ControlFlow::Exit
+        } else {
+            ControlFlow::Poll
+        };
         match event {
-            winit::event::Event::WindowEvent { event, .. } => match event {
-                winit::event::WindowEvent::CloseRequested => {
-                    {
-                        let mut s = stopped.write().unwrap();
-                        *s = true;
-                    }
-                    *control_flow = winit::event_loop::ControlFlow::Exit
-                }
-                winit::event::WindowEvent::KeyboardInput {
-                    input:
-                        winit::event::KeyboardInput {
-                            virtual_keycode: Some(winit::event::VirtualKeyCode::Escape),
-                            ..
-                        },
-                    ..
-                } => *control_flow = winit::event_loop::ControlFlow::Exit,
-                winit::event::WindowEvent::Resized(dims) => {
-                    println!("resized to {:?}", dims);
-                    let mut r = rend.lock().unwrap();
+            Event::WindowEvent {
+                event: WindowEvent::Resized(_),
+                ..
+            } => {
+                let size = window.inner_size();
 
-                    r.dimensions = window::Extent2D {
-                        width: dims.width,
-                        height: dims.height,
-                    };
-                    r.recreate_swapchain();
-                }
-                _ => {}
-            },
-            winit::event::Event::RedrawEventsCleared => {
-                // let mut r = rend.lock().unwrap();
-                // r.render();
+                let sc_desc = wgpu::SwapChainDescriptor {
+                    usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
+                    format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                    width: size.width as u32,
+                    height: size.height as u32,
+                    present_mode: wgpu::PresentMode::Mailbox,
+                };
+
+                swap_chain = device.create_swap_chain(&surface, &sc_desc);
             }
-            _ => {}
-        }
-    });
-}
-
-struct Renderer<B: gfx_hal::Backend> {
-    desc_pool: ManuallyDrop<B::DescriptorPool>,
-    surface: ManuallyDrop<B::Surface>,
-    format: gfx_hal::format::Format,
-    dimensions: window::Extent2D,
-    viewport: pso::Viewport,
-    render_pass: Arc<GRenderPass<B>>,
-    framebuffer: ManuallyDrop<B::Framebuffer>,
-    pipeline: GPipeline<B>,
-    desc_set: Option<B::DescriptorSet>,
-    submission_complete_semaphores: Vec<B::Semaphore>,
-    submission_complete_fences: Vec<B::Fence>,
-    cmd_pools: Vec<B::CommandPool>,
-    cmd_buffers: Vec<B::CommandBuffer>,
-    vertex_buffer: ManuallyDrop<B::Buffer>,
-    buffer_memory: ManuallyDrop<B::Memory>,
-    frames_in_flight: usize,
-    frame: u64,
-    // These members are dropped in the declaration order.
-    gdevice: GDevice<B>,
-    instance: B::Instance,
-}
-
-impl<B> Renderer<B>
-where
-    B: gfx_hal::Backend,
-{
-    fn new(
-        instance: B::Instance,
-        mut surface: B::Surface,
-        adapter: gfx_hal::adapter::Adapter<B>,
-    ) -> Renderer<B> {
-        let memory_types = adapter.physical_device.memory_properties().memory_types;
-        let limits = adapter.physical_device.properties().limits;
-
-        let gdevice = GDevice::new(adapter, &surface);
-        let device = gdevice.logical.clone();
-
-        let command_pool = unsafe {
-            device.create_command_pool(gdevice.queues.family, pool::CommandPoolCreateFlags::empty())
-        }
-        .expect("Can't create command pool");
-
-        // Setup renderpass and pipeline
-        let set_layout = Arc::new(GDescriptorSetLayout::new(&gdevice, vec![].into_iter()));
-
-        // Descriptors
-        let mut desc_pool = ManuallyDrop::new(
-            unsafe {
-                device.create_descriptor_pool(
-                    1, // sets
-                    vec![
-                        pso::DescriptorRangeDesc {
-                            ty: pso::DescriptorType::Image {
-                                ty: pso::ImageDescriptorType::Sampled {
-                                    with_sampler: false,
-                                },
+            Event::WindowEvent {
+                event:
+                    WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                virtual_keycode: Some(VirtualKeyCode::Escape),
+                                state: ElementState::Pressed,
+                                ..
                             },
-                            count: 1,
-                        },
-                        pso::DescriptorRangeDesc {
-                            ty: pso::DescriptorType::Sampler,
-                            count: 1,
-                        },
-                    ]
-                    .into_iter(),
-                    pso::DescriptorPoolCreateFlags::empty(),
-                )
-            }
-            .expect("Can't create descriptor pool"),
-        );
-        let desc_set = unsafe { desc_pool.allocate_one(&set_layout.layout()) }.unwrap();
-
-        // Buffer allocations
-        println!("Memory types: {:?}", memory_types);
-        let non_coherent_alignment = limits.non_coherent_atom_size as u64;
-
-        let buffer_stride = mem::size_of::<Vertex>() as u64;
-        let buffer_len = QUAD.len() as u64 * buffer_stride;
-        assert_ne!(buffer_len, 0);
-        let padded_buffer_len = ((buffer_len + non_coherent_alignment - 1)
-            / non_coherent_alignment)
-            * non_coherent_alignment;
-
-        let mut vertex_buffer = ManuallyDrop::new(
-            unsafe {
-                device.create_buffer(
-                    padded_buffer_len,
-                    buffer::Usage::VERTEX,
-                    m::SparseFlags::empty(),
-                )
-            }
-            .unwrap(),
-        );
-
-        let buffer_req = unsafe { device.get_buffer_requirements(&vertex_buffer) };
-
-        let upload_type = memory_types
-            .iter()
-            .enumerate()
-            .position(|(id, mem_type)| {
-                // type_mask is a bit field where each bit represents a memory type. If the bit is set
-                // to 1 it means we can use that type for our buffer. So this code finds the first
-                // memory type that has a `1` (or, is allowed), and is visible to the CPU.
-                buffer_req.type_mask & (1 << id) != 0
-                    && mem_type.properties.contains(m::Properties::CPU_VISIBLE)
-            })
-            .unwrap()
-            .into();
-
-        // TODO: check transitions: read/write mapping and vertex buffer read
-        let buffer_memory = unsafe {
-            let mut memory = device
-                .allocate_memory(upload_type, buffer_req.size)
-                .unwrap();
-            device
-                .bind_buffer_memory(&memory, 0, &mut vertex_buffer)
-                .unwrap();
-            let mapping = device.map_memory(&mut memory, m::Segment::ALL).unwrap();
-            ptr::copy_nonoverlapping(QUAD.as_ptr() as *const u8, mapping, buffer_len as usize);
-            device
-                .flush_mapped_memory_ranges(iter::once((&memory, m::Segment::ALL)))
-                .unwrap();
-            device.unmap_memory(&mut memory);
-            ManuallyDrop::new(memory)
-        };
-
-        let caps = surface.capabilities(&gdevice.physical);
-        let formats = surface.supported_formats(&gdevice.physical);
-        println!("formats: {:?}", formats);
-        let format = formats.map_or(f::Format::Rgba8Srgb, |formats| {
-            formats
-                .iter()
-                .find(|format| format.base_format().1 == ChannelType::Srgb)
-                .map(|format| *format)
-                .unwrap_or(formats[0])
-        });
-
-        let swap_config = window::SwapchainConfig::from_caps(&caps, format, DIMS);
-        let fat = swap_config.framebuffer_attachment();
-        println!("{:?}", swap_config);
-        let extent = swap_config.extent;
-        unsafe {
-            surface
-                .configure_swapchain(&device, swap_config)
-                .expect("Can't configure swapchain");
-        };
-
-        let render_pass = Arc::new(GRenderPassBuilder::new(format).build(&gdevice));
-
-        let swap_config = window::SwapchainConfig::from_caps(&caps, format, DIMS);
-        let framebuffer = ManuallyDrop::new(unsafe {
-            device
-                .create_framebuffer(
-                    &render_pass.render_pass(),
-                    iter::once(fat),
-                    swap_config.extent.to_extent(),
-                )
-                .unwrap()
-        });
-
-        // Define maximum number of frames we want to be able to be "in flight" (being computed
-        // simultaneously) at once
-        let frames_in_flight = 3;
-
-        // The number of the rest of the resources is based on the frames in flight.
-        let mut submission_complete_semaphores = Vec::with_capacity(frames_in_flight);
-        let mut submission_complete_fences = Vec::with_capacity(frames_in_flight);
-        // Note: We don't really need a different command pool per frame in such a simple demo like this,
-        // but in a more 'real' application, it's generally seen as optimal to have one command pool per
-        // thread per frame. There is a flag that lets a command pool reset individual command buffers
-        // which are created from it, but by default the whole pool (and therefore all buffers in it)
-        // must be reset at once. Furthermore, it is often the case that resetting a whole pool is actually
-        // faster and more efficient for the hardware than resetting individual command buffers, so it's
-        // usually best to just make a command pool for each set of buffers which need to be reset at the
-        // same time (each frame). In our case, each pool will only have one command buffer created from it,
-        // though.
-        let mut cmd_pools = Vec::with_capacity(frames_in_flight);
-        let mut cmd_buffers = Vec::with_capacity(frames_in_flight);
-
-        cmd_pools.push(command_pool);
-        for _ in 1..frames_in_flight {
-            unsafe {
-                cmd_pools.push(
-                    device
-                        .create_command_pool(
-                            gdevice.queues.family,
-                            pool::CommandPoolCreateFlags::empty(),
-                        )
-                        .expect("Can't create command pool"),
-                );
-            }
-        }
-
-        for i in 0..frames_in_flight {
-            submission_complete_semaphores.push(
-                device
-                    .create_semaphore()
-                    .expect("Could not create semaphore"),
-            );
-            submission_complete_fences
-                .push(device.create_fence(true).expect("Could not create fence"));
-            cmd_buffers.push(unsafe { cmd_pools[i].allocate_one(command::Level::Primary) });
-        }
-
-        let pipeline_cache_path = "quad_pipeline_cache";
-
-        let previous_pipeline_cache_data = std::fs::read(pipeline_cache_path);
-
-        if let Err(error) = previous_pipeline_cache_data.as_ref() {
-            println!("Error loading the previous pipeline cache data: {}", error);
-        }
-
-        let pipeline_layout = Arc::new(GPipelineLayout::new(&gdevice, set_layout));
-        let pipeline = {
-            use graphics::shaders::GShaderModule;
-
-            let vs_module = GShaderModule::<B>::new(
-                &gdevice,
-                include_str!("./data/quad.vert"),
-                ShaderKind::Vertex,
-            );
-            let fs_module = GShaderModule::<B>::new(
-                &gdevice,
-                include_str!("./data/quad.frag"),
-                ShaderKind::Fragment,
-            );
-
-            let spec = gfx_hal::spec_const_list![0.8f32];
-
-            let vertex_buffers = vec![pso::VertexBufferDesc {
-                binding: 0,
-                stride: mem::size_of::<Vertex>() as u32,
-                rate: VertexInputRate::Vertex,
-            }];
-
-            let attributes = vec![
-                pso::AttributeDesc {
-                    location: 0,
-                    binding: 0,
-                    element: pso::Element {
-                        format: f::Format::Rg32Sfloat,
-                        offset: 0,
+                        ..
                     },
-                },
-                pso::AttributeDesc {
-                    location: 1,
-                    binding: 0,
-                    element: pso::Element {
-                        format: f::Format::Rg32Sfloat,
-                        offset: 8,
-                    },
-                },
-            ];
+                ..
+            }
+            | Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => {
+                *control_flow = ControlFlow::Exit;
+            }
+            Event::MainEventsCleared => window.request_redraw(),
+            Event::RedrawEventsCleared => {
+                let now = Instant::now();
+                imgui.io_mut().update_delta_time(now - last_frame);
+                last_frame = now;
 
-            GPipelineBuilder::new(
-                &vertex_buffers,
-                &attributes,
-                vs_module.entrypoint_with(None, Some(spec)),
-                fs_module.entrypoint(),
-                pipeline_layout,
-                render_pass.clone(),
-            )
-            .build(&gdevice)
-        };
+                let frame = match swap_chain.get_current_frame() {
+                    Ok(frame) => frame,
+                    Err(e) => {
+                        eprintln!("dropped frame: {:?}", e);
+                        return;
+                    }
+                };
+                platform
+                    .prepare_frame(imgui.io_mut(), &window)
+                    .expect("Failed to prepare frame");
+                let ui = imgui.frame();
 
-        // Rendering setup
-        let viewport = pso::Viewport {
-            rect: pso::Rect {
-                x: 0,
-                y: 0,
-                w: extent.width as _,
-                h: extent.height as _,
-            },
-            depth: 0.0..1.0,
-        };
+                // Render example normally at background
+                example.update(ui.io().delta_time);
+                example.setup_camera(&queue, ui.io().display_size);
+                example.render(&frame.output.view, &device, &queue);
 
-        Renderer {
-            instance,
-            gdevice,
-            desc_pool,
-            surface: ManuallyDrop::new(surface),
-            format,
-            dimensions: DIMS,
-            viewport,
-            render_pass,
-            framebuffer,
-            pipeline,
-            desc_set: Some(desc_set),
-            submission_complete_semaphores,
-            submission_complete_fences,
-            cmd_pools,
-            cmd_buffers,
-            vertex_buffer,
-            buffer_memory,
-            frames_in_flight,
-            frame: 0,
-        }
-    }
+                // Store the new size of Image() or None to indicate that the window is collapsed.
+                let mut new_example_size: Option<[f32; 2]> = None;
 
-    fn recreate_swapchain(&mut self) {
-        let caps = self.surface.capabilities(&self.gdevice.physical);
-        let swap_config = window::SwapchainConfig::from_caps(&caps, self.format, self.dimensions);
-        println!("{:?}", swap_config);
+                imgui::Window::new(im_str!("Cube"))
+                    .size([512.0, 512.0], Condition::FirstUseEver)
+                    .build(&ui, || {
+                        new_example_size = Some(ui.content_region_avail());
+                        imgui::Image::new(example_texture_id, new_example_size.unwrap()).build(&ui);
+                    });
 
-        let extent = swap_config.extent.to_extent();
-        self.viewport.rect.w = extent.width as _;
-        self.viewport.rect.h = extent.height as _;
+                if let Some(size) = new_example_size {
+                    // Resize render target, which is optional
+                    if size != example_size && size[0] >= 1.0 && size[1] >= 1.0 {
+                        example_size = size;
+                        let scale = &ui.io().display_framebuffer_scale;
+                        let texture_config = TextureConfig {
+                            size: Extent3d {
+                                width: (example_size[0] * scale[0]) as u32,
+                                height: (example_size[1] * scale[1]) as u32,
+                                ..Default::default()
+                            },
+                            usage: wgpu::TextureUsage::RENDER_ATTACHMENT
+                                | wgpu::TextureUsage::SAMPLED,
+                            ..Default::default()
+                        };
+                        renderer.textures.replace(
+                            example_texture_id,
+                            Texture::new(&device, &renderer, texture_config),
+                        );
+                    }
 
-        let device = &self.gdevice.logical;
-        unsafe {
-            device.wait_idle().unwrap();
-            device.destroy_framebuffer(ManuallyDrop::into_inner(ptr::read(&self.framebuffer)));
-            self.framebuffer = ManuallyDrop::new(
-                device
-                    .create_framebuffer(
-                        &self.render_pass.render_pass(),
-                        iter::once(swap_config.framebuffer_attachment()),
-                        extent,
-                    )
-                    .unwrap(),
-            )
-        };
-
-        unsafe {
-            self.surface
-                .configure_swapchain(device, swap_config)
-                .expect("Can't create swapchain");
-        }
-    }
-
-    fn render(&mut self) {
-        // Start a RenderDoc capture, which allows analyzing the rendering pipeline
-        self.gdevice.logical.start_capture();
-
-        let surface_image = unsafe {
-            match self.surface.acquire_image(!0) {
-                Ok((image, _)) => image,
-                Err(_) => {
-                    self.recreate_swapchain();
-                    return;
+                    // Only render example to example_texture if thw window is not collapsed
+                    example.setup_camera(&queue, size);
+                    example.render(
+                        &renderer.textures.get(example_texture_id).unwrap().view(),
+                        &device,
+                        &queue,
+                    );
                 }
-            }
-        };
 
-        // Compute index into our resource ring buffers based on the frame number
-        // and number of frames in flight. Pay close attention to where this index is needed
-        // versus when the swapchain image index we got from acquire_image is needed.
-        let frame_idx = self.frame as usize % self.frames_in_flight;
+                let mut encoder: wgpu::CommandEncoder =
+                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        // Wait for the fence of the previous submission of this frame and reset it; ensures we are
-        // submitting only up to maximum number of frames_in_flight if we are submitting faster than
-        // the gpu can keep up with. This would also guarantee that any resources which need to be
-        // updated with a CPU->GPU data copy are not in use by the GPU, so we can perform those updates.
-        // In this case there are none to be done, however.
-        unsafe {
-            let device = &self.gdevice.logical;
-            let fence = &mut self.submission_complete_fences[frame_idx];
-            device
-                .wait_for_fence(fence, !0)
-                .expect("Failed to wait for fence");
-            device.reset_fence(fence).expect("Failed to reset fence");
-            self.cmd_pools[frame_idx].reset(false);
-        }
+                if last_cursor != Some(ui.mouse_cursor()) {
+                    last_cursor = Some(ui.mouse_cursor());
+                    platform.prepare_render(&ui, &window);
+                }
 
-        // Rendering
-        let cmd_buffer = &mut self.cmd_buffers[frame_idx];
-        unsafe {
-            cmd_buffer.begin_primary(command::CommandBufferFlags::ONE_TIME_SUBMIT);
-
-            cmd_buffer.set_viewports(0, iter::once(self.viewport.clone()));
-            cmd_buffer.set_scissors(0, iter::once(self.viewport.rect));
-            cmd_buffer.bind_graphics_pipeline(&self.pipeline.pipeline());
-            cmd_buffer.bind_graphics_descriptor_sets(
-                &self.pipeline.layout().layout(),
-                0,
-                self.desc_set.as_ref().into_iter(),
-                iter::empty(),
-            );
-            cmd_buffer.bind_vertex_buffers(
-                0,
-                iter::once((&*self.vertex_buffer, buffer::SubRange::WHOLE)),
-            );
-
-            cmd_buffer.begin_render_pass(
-                &self.render_pass.render_pass(),
-                &self.framebuffer,
-                self.viewport.rect,
-                iter::once(command::RenderAttachmentInfo {
-                    image_view: surface_image.borrow(),
-                    clear_value: command::ClearValue {
-                        color: command::ClearColor {
-                            float32: [0.8, 0.8, 0.8, 1.0],
+                let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: None,
+                    color_attachments: &[wgpu::RenderPassColorAttachment {
+                        view: &frame.output.view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load, // Do not clear
+                            // load: wgpu::LoadOp::Clear(clear_color),
+                            store: true,
                         },
-                    },
-                }),
-                command::SubpassContents::Inline,
-            );
-            cmd_buffer.draw(0..6, 0..1);
-            cmd_buffer.end_render_pass();
-            cmd_buffer.finish();
+                    }],
+                    depth_stencil_attachment: None,
+                });
 
-            self.gdevice.queues.queues[0].submit(
-                iter::once(&*cmd_buffer),
-                iter::empty(),
-                iter::once(&self.submission_complete_semaphores[frame_idx]),
-                Some(&mut self.submission_complete_fences[frame_idx]),
-            );
+                renderer
+                    .render(ui.render(), &queue, &device, &mut rpass)
+                    .expect("Rendering failed");
 
-            // present frame
-            let result = self.gdevice.queues.queues[0].present(
-                &mut self.surface,
-                surface_image,
-                Some(&mut self.submission_complete_semaphores[frame_idx]),
-            );
+                drop(rpass);
 
-            if result.is_err() {
-                self.recreate_swapchain();
+                queue.submit(Some(encoder.finish()));
             }
+            _ => (),
         }
 
-        // Increment our frame
-        self.frame += 1;
-
-        // End the RenderDoc capture
-        self.gdevice.logical.stop_capture();
-    }
-}
-
-impl<B> Drop for Renderer<B>
-where
-    B: gfx_hal::Backend,
-{
-    fn drop(&mut self) {
-        let device = &self.gdevice.logical;
-
-        device.wait_idle().unwrap();
-        unsafe {
-            // TODO: When ManuallyDrop::take (soon to be renamed to ManuallyDrop::read) is stabilized we should use that instead.
-            let _ = self.desc_set.take();
-            device.destroy_descriptor_pool(ManuallyDrop::into_inner(ptr::read(&self.desc_pool)));
-
-            device.destroy_buffer(ManuallyDrop::into_inner(ptr::read(&self.vertex_buffer)));
-            for p in self.cmd_pools.drain(..) {
-                device.destroy_command_pool(p);
-            }
-            for s in self.submission_complete_semaphores.drain(..) {
-                device.destroy_semaphore(s);
-            }
-            for f in self.submission_complete_fences.drain(..) {
-                device.destroy_fence(f);
-            }
-            device.destroy_framebuffer(ManuallyDrop::into_inner(ptr::read(&self.framebuffer)));
-            self.surface.unconfigure_swapchain(&device);
-            device.free_memory(ManuallyDrop::into_inner(ptr::read(&self.buffer_memory)));
-            let surface = ManuallyDrop::into_inner(ptr::read(&self.surface));
-            self.instance.destroy_surface(surface);
-        }
-        println!("DROPPED!");
-    }
+        platform.handle_event(imgui.io_mut(), &window, &event);
+    });
 }
