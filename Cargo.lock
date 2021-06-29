@@ -152,6 +152,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "bytemuck",
+ "cake-midi",
  "cgmath",
  "futures",
  "getset",
@@ -166,6 +167,10 @@ dependencies = [
  "wgpu-subscriber",
  "winit",
 ]
+
+[[package]]
+name = "cake-midi"
+version = "0.1.0"
 
 [[package]]
 name = "calloop"
