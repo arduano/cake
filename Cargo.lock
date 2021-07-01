@@ -965,27 +965,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "graphics"
-version = "0.1.0"
-dependencies = [
- "getset",
- "gfx-hal 0.9.0",
- "graphics-macros",
- "shaderc",
-]
-
-[[package]]
-name = "graphics-macros"
-version = "0.1.0"
-dependencies = [
- "gfx-hal 0.9.0",
- "proc-macro2",
- "quote",
- "shaderc",
- "syn",
-]
-
-[[package]]
 name = "half"
 version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

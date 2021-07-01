@@ -2,8 +2,6 @@
 
 members = [
     "src/cake",
-    "src/graphics/lib",
-    "src/graphics/macros",
     "src/midi",
 ]
 
