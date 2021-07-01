@@ -40,6 +40,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "angle"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba2ba87287a952ce1802117f6201af6ff3f32dd372f42dbf53217e900bac7881"
+dependencies = [
+ "num-traits",
+ "serde",
+ "serde_derive",
+]
+
+[[package]]
 name = "ansi_term"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -173,6 +184,7 @@ name = "cake-midi"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "color-rs",
  "getset",
  "to_vec",
 ]
@@ -290,6 +302,19 @@ checksum = "3538270d33cc669650c4b093848450d380def10c331d38c768e34cac80576e6e"
 dependencies = [
  "termcolor",
  "unicode-width",
+]
+
+[[package]]
+name = "color-rs"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59f43d9768f46589e0b9f246486f49a5b841b29651503c919d0ed3f1e679fc70"
+dependencies = [
+ "angle",
+ "half",
+ "num-traits",
+ "serde",
+ "serde_derive",
 ]
 
 [[package]]
@@ -959,6 +984,12 @@ dependencies = [
  "shaderc",
  "syn",
 ]
+
+[[package]]
+name = "half"
+version = "1.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62aca2aba2d62b4a7f5b33f3712cb1b0692779a56fb510499d5c0aa594daeaf3"
 
 [[package]]
 name = "hashbrown"

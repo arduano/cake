@@ -1,14 +1,21 @@
+use bytemuck::{Pod, Zeroable};
+use color::{Deg, Hsv, ToRgb};
 use std::{
     borrow::Borrow,
     cmp::{max, min},
     collections::{LinkedList, VecDeque},
     rc::Rc,
 };
-use bytemuck::{Pod, Zeroable};
 
 pub enum Leaf {
     Note(Option<Rc<Note>>),
     Node(Node),
+}
+
+fn get_col(c: i32) -> i32 {
+    let rgb = Hsv::<f32>::new(Deg(c as f32 * 123.0), 1.0, 1.0).to_rgb::<u8>();
+
+    rgb.r as i32 + ((rgb.g as i32) << 8) + ((rgb.b as i32) << 16)
 }
 
 impl Leaf {
@@ -45,7 +52,7 @@ impl Leaf {
                     Some(note) => IntVector4 {
                         val1: note.start,
                         val2: note.end,
-                        val3: note.color,
+                        val3: get_col(note.color),
                         val4: note.note_num,
                     },
                 });

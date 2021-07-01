@@ -1,3 +1,5 @@
+use std::{collections::VecDeque, rc::Rc};
+
 use getset::Getters;
 use to_vec::ToVec;
 
@@ -85,6 +87,14 @@ impl MIDIFile {
 
         let mut output = MidiTrackOutput::new(self.ppq as u32);
 
+        let mut trees = Vec::new();
+        let mut vecs = Vec::new();
+
+        for _ in 0..256 {
+            trees.push(TreeSerializer::new(4));
+            vecs.push(VecDeque::new());
+        }
+
         let mut all_ended = false;
         while !all_ended {
             let time_int = (time * tps as f64) as i64;
@@ -103,22 +113,58 @@ impl MIDIFile {
             }
 
             time += output.last_tempo_time_step();
+
+            if *output.note_events_counted() > 100000 {
+                
+                for i in 0..256 {
+                    let vec = &mut vecs[i];
+                    let tree = &mut trees[i];
+                    output.flush_notes(i as i32, vec);
+                    loop {
+                        match vec.pop_back() {
+                            None => break,
+                            Some(note) => {
+                                tree.feed_note(Rc::new(note));
+                            }
+                        }
+                    }
+                }
+
+                output.reset_note_event_counted();
+            }
         }
-
-        println!("{}", output.queues.note_count());
-
-        let mut trees = Vec::<Leaf>::new();
-
-        for queue in &mut output.queues.queues {
-            let mut tree = TreeSerializer::new(4);
+                
+        for i in 0..256 {
+            let vec = &mut vecs[i];
+            let tree = &mut trees[i];
+            output.flush_notes(i as i32, vec);
             loop {
-                match queue.pop_back() {
+                match vec.pop_back() {
                     None => break,
-                    Some(note) => tree.feed_note(note),
+                    Some(note) => {
+                        tree.feed_note(Rc::new(note));
+                    }
                 }
             }
-            trees.push(tree.complete());
         }
+        output.assert_empty();
+
+        let trees = trees.into_iter().map(|t| t.complete()).to_vec();
+
+        // for queue in &mut output.queues {
+        //     let mut tree = TreeSerializer::new(4);
+        //     loop {
+        //         match queue.pop_back() {
+        //             None => break,
+        //             Some(note) => {
+        //                 let note = Rc::try_unwrap(note).expect("Not all notes were ended!");
+        //                 let note = note.into_inner();
+        //                 tree.feed_note(Rc::new(note));
+        //             }
+        //         }
+        //     }
+        //     trees.push(tree.complete());
+        // }
 
         let sum: u64 = trees.iter().map(|l| l.count()).sum();
 

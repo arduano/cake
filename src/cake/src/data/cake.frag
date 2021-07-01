@@ -41,7 +41,7 @@ layout (binding = 1) readonly buffer BinaryTree
 
 const float borderWidth = 0.0015;
 
-int getNoteAt(int key, int time) {
+ivec3 getNoteAt(int key, int time) {
     int nextIndex = BinTree[key].x;
 
     int steps = 0;
@@ -54,7 +54,7 @@ int getNoteAt(int key, int time) {
 
     ivec3 note = BinTree[-nextIndex];
 
-    return steps;
+    return note;
 }
 
 bool midi_is_white(int p) {
@@ -90,8 +90,15 @@ void main()
     int key = int(floor(position.x * keyCount));
     ivec3 note;
 
-    int steps = getNoteAt(key, time);
-    fsout_Color = vec4(0, 0, 1, 1) / 10.0 * steps;
+    note = getNoteAt(key, time);
+
+    // fsout_Color = vec4(0, 0, 1, 1) / 10.0 * steps;
+
+    if (note.z == -1) {
+        fsout_Color = vec4(0, 0, 0, 1);
+    } else {
+        fsout_Color = vec4((note.z & 0xFF) / 255.0, ((note.z >> 8) & 0xFF) / 255.0, ((note.z >> 16) & 0xFF) / 255.0, 1);
+    }
 
     // if (!midi_is_white(key)) {
     //     fsout_Color = vec4(1, 1, 1, 1);

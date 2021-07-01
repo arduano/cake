@@ -368,7 +368,7 @@ fn main() {
             width: 1280.0,
             height: 720.0,
         });
-        window.set_title(&format!("imgui-wgpu {}", version));
+        window.set_title(&format!("Cake {}", version));
         let size = window.inner_size();
 
         let surface = unsafe { instance.create_surface(&window) };

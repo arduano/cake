@@ -11,32 +11,14 @@ use crate::{data::Note, errors::MIDILoadError, readers::TrackReader};
 
 #[derive(Getters)]
 pub struct NoteQueues {
-    pub queues: Vec<VecDeque<Rc<Note>>>,
+    pub queues: Vec<VecDeque<Rc<UnsafeCell<Note>>>>,
 }
 
-impl NoteQueues {
-    pub fn new() -> Self {
-        let mut queues = Vec::<VecDeque<Rc<Note>>>::new();
-
-        for _ in 0..(256) {
-            queues.push(VecDeque::new());
-        }
-
-        NoteQueues { queues }
-    }
-
-    pub fn add_note(&mut self, key: u8, note: Rc<Note>) {
-        self.queues[key as usize].push_front(note);
-    }
-
-    pub fn note_count(&self) -> u64 {
-        self.queues.iter().map(|q| q.len() as u64).sum()
-    }
-}
+impl NoteQueues {}
 
 #[derive(Getters)]
 pub struct MidiTrackOutput {
-    pub queues: NoteQueues,
+    pub queues: Vec<VecDeque<Rc<UnsafeCell<Note>>>>,
 
     #[getset(get = "pub")]
     note_events_counted: u64,
@@ -49,14 +31,51 @@ pub struct MidiTrackOutput {
 
 impl MidiTrackOutput {
     pub fn new(ppq: u32) -> Self {
+        let mut queues = Vec::<VecDeque<Rc<UnsafeCell<Note>>>>::new();
+
+        for _ in 0..(256) {
+            queues.push(VecDeque::new());
+        }
+
         let mut output = MidiTrackOutput {
-            queues: NoteQueues::new(),
+            queues,
             last_tempo_time_step: 0 as f64,
             note_events_counted: 0,
             ppq,
         };
         output.update_tempo(500000);
         output
+    }
+
+    pub fn add_note(&mut self, key: u8, note: Rc<UnsafeCell<Note>>) {
+        self.queues[key as usize].push_front(note);
+    }
+
+    pub fn note_count(&self) -> u64 {
+        self.queues.iter().map(|q| q.len() as u64).sum()
+    }
+
+    pub fn flush_notes(&mut self, key: i32, queue: &mut VecDeque<Note>) {
+        let source = &mut self.queues[key as usize];
+
+        loop {
+            match source.back() {
+                None => break,
+                Some(note) => unsafe {
+                    if (*note.get()).end == -1 {
+                        break;
+                    }
+                    let note = source.pop_back().unwrap();
+                    let note = Rc::try_unwrap(note).expect("Not all notes were ended!");
+                    let note = note.into_inner();
+                    queue.push_front(note);
+                },
+            }
+        }
+    }
+
+    pub fn assert_empty(&self) {
+        debug_assert!(self.queues.iter().map(|q| q.len()).sum::<usize>() == 0);
     }
 
     pub fn count_note_event(&mut self) {
@@ -83,7 +102,7 @@ pub struct MIDITrack {
     pushback: i32,
     prev_command: u8,
 
-    unended_notes: Option<Vec<VecDeque<Rc<Note>>>>,
+    unended_notes: Option<Vec<VecDeque<Rc<UnsafeCell<Note>>>>>,
 }
 
 impl MIDITrack {
@@ -102,7 +121,7 @@ impl MIDITrack {
         }
     }
 
-    fn init_unended_queues() -> Vec<VecDeque<Rc<Note>>> {
+    fn init_unended_queues() -> Vec<VecDeque<Rc<UnsafeCell<Note>>>> {
         let mut unended_notes = Vec::new();
 
         for _ in 0..(256 * 16) {
@@ -112,7 +131,7 @@ impl MIDITrack {
         unended_notes
     }
 
-    fn get_unended_queue_mut(&mut self, key: u8, chan: u8) -> &mut VecDeque<Rc<Note>> {
+    fn get_unended_queue_mut(&mut self, key: u8, chan: u8) -> &mut VecDeque<Rc<UnsafeCell<Note>>> {
         if self.unended_notes.is_none() {
             self.unended_notes.replace(MIDITrack::init_unended_queues());
         }
@@ -153,9 +172,10 @@ impl MIDITrack {
         return Ok(val);
     }
 
-    fn end_note(note: Rc<Note>, time: i32) {
+    fn end_note(note: Rc<UnsafeCell<Note>>, time: i32) {
         unsafe {
-            std::ptr::read(note.as_ref()).end = time;
+            let note = note.as_ref();
+            (*note.get()).end = time;
         }
     }
 
@@ -256,8 +276,8 @@ impl MIDITrack {
                     }
                 } else {
                     let n = Note::new_unended(time_int, self.track_id, channel);
-                    let n = Rc::new(n);
-                    output.queues.add_note(key, n.clone());
+                    let n = Rc::new(UnsafeCell::new(n));
+                    output.add_note(key, n.clone());
                     let queue = self.get_unended_queue_mut(key, channel);
                     queue.push_front(n);
                 }

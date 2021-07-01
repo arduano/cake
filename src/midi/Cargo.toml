@@ -8,3 +8,4 @@ workspace = "../.."
 getset = "0.1.1"
 to_vec = "0.1.0"
 bytemuck = { version = "1.4", features = ["derive"] }
+color-rs = "0.6.1"
