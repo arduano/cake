@@ -83,7 +83,7 @@ impl MidiTrackOutput {
     }
 
     pub fn reset_note_event_counted(&mut self) {
-        self.note_events_counted += 1;
+        self.note_events_counted = 0;
     }
 
     pub fn update_tempo(&mut self, tempo: u32) {
@@ -266,6 +266,8 @@ impl MIDITrack {
                 let channel = command & 0x0F;
                 let key = self.read()?;
                 let vel = self.read_fast()?;
+
+                output.count_note_event();
 
                 if comm == 0x80 || vel == 0 {
                     let l = self.get_unended_queue_mut(key, channel);

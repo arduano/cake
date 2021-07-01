@@ -114,8 +114,9 @@ impl MIDIFile {
 
             time += output.last_tempo_time_step();
 
-            if *output.note_events_counted() > 100000 {
-                
+            if *output.note_events_counted() > 10000000 {
+                println!("Feeding notes, {}", output.note_count());
+
                 for i in 0..256 {
                     let vec = &mut vecs[i];
                     let tree = &mut trees[i];
@@ -171,12 +172,7 @@ impl MIDIFile {
         println!("Nodes: {}", sum);
 
         let mut serialized = (0..256)
-            .map(|v| IntVector4 {
-                val1: 0,
-                val2: 0,
-                val3: 0,
-                val4: 0,
-            })
+            .map(|v| IntVector4::default())
             .to_vec();
         for (i, t) in trees.iter().enumerate() {
             serialized[i].val1 = t.serialize_to_vec(&mut serialized);

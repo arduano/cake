@@ -72,6 +72,17 @@ pub struct IntVector4 {
     pub val4: i32,
 }
 
+impl IntVector4 {
+    pub fn default() -> Self {
+        IntVector4 {
+            val1: 0,
+            val2: 0,
+            val3: 0,
+            val4: 0,
+        }
+    }
+}
+
 pub struct Note {
     pub start: i32,
     pub end: i32,

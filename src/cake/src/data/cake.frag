@@ -41,18 +41,22 @@ layout (binding = 1) readonly buffer BinaryTree
 
 const float borderWidth = 0.0015;
 
+ivec3 sampleAt(int pos) {
+    return BinTree[pos];
+}
+
 ivec3 getNoteAt(int key, int time) {
-    int nextIndex = BinTree[key].x;
+    int nextIndex = sampleAt(key).x;
 
     int steps = 0;
     while(nextIndex > 0) {
-        ivec3 node = BinTree[nextIndex];
+        ivec3 node = sampleAt(nextIndex);
         if(time < node.x) nextIndex = node.y;
         else nextIndex = node.z;
         steps++;
     }
 
-    ivec3 note = BinTree[-nextIndex];
+    ivec3 note = sampleAt(-nextIndex);
 
     return note;
 }
@@ -83,6 +87,12 @@ void main()
     //         else whiteKey = k;
     //     }
     // }
+
+    // vec4 tex = texture(sampler2D(t_Color, s_Color), position);
+    // float mag = length(position-vec2(0.5));
+    // fsout_Color = vec4(mix(tex.xyz, vec3(0.0), mag*mag), 1.0);
+
+    // return;
 
     int time = int(round(position.y * (end - start) + start));
 

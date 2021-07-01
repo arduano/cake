@@ -1,7 +1,9 @@
+use __core::mem::size_of;
 use bytemuck::{Pod, Zeroable};
 use futures::executor::block_on;
 use imgui::*;
 use imgui_wgpu::{Renderer, RendererConfig, Texture, TextureConfig};
+use midi::data::IntVector4;
 use midi::midifile::MIDIFile;
 use std::fs::{self, File};
 use std::io::Read;
@@ -104,6 +106,12 @@ impl Example {
     ) -> Self {
         use std::mem;
 
+        let limits = device.limits();
+
+        println!("Max texture 1d: {}", limits.max_texture_dimension_1d);
+        println!("Max texture 2d: {}", limits.max_texture_dimension_2d);
+        println!("Max texture 3d: {}", limits.max_texture_dimension_3d);
+
         // Create the vertex and index buffers
         let vertex_size = mem::size_of::<Vertex>();
         let (vertex_data, index_data) = create_vertices();
@@ -152,12 +160,30 @@ impl Example {
             push_constant_ranges: &[],
         });
 
+        let mut midi = MIDIFile::new(
+            "D:\\Midis\\Clubstep.mid",
+            true,
+            Some(&|read| {
+                println!("{}", read);
+            }),
+        )
+        .unwrap();
+
+        let mut vec = midi.parse_all_tracks(16384).expect("MIDI parse failed");
+
+        let size = 8192u32;
+        let height = vec.len() as u32 / size + 1;
+
+        let full_len = size * height;
+        let offset = full_len - vec.len() as u32;
+
+        vec.extend((0..offset).map(|_| IntVector4::default()));
+
         // Create the texture
-        let size = 256u32;
-        let texels = create_texels(size as usize);
+        // let texels = create_texels(size as usize);
         let texture_extent = wgpu::Extent3d {
             width: size,
-            height: size,
+            height: height,
             depth_or_array_layers: 1,
         };
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -166,7 +192,7 @@ impl Example {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: wgpu::TextureFormat::Rgba32Sint,
             usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
         });
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -176,10 +202,10 @@ impl Example {
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
             },
-            &texels,
+            &bytemuck::cast_slice(&vec),
             wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: NonZeroU32::new(4 * size),
+                bytes_per_row: NonZeroU32::new(size_of::<IntVector4>() as u32 * size),
                 rows_per_image: None,
             },
             texture_extent,
@@ -206,16 +232,6 @@ impl Example {
         // let metadata = fs::metadata("./cake-cache.dat").expect("unable to read metadata");
         // let mut buffer = vec![0; metadata.len() as usize];
         // f.read(&mut buffer).expect("buffer overflow");
-
-        let mut midi = MIDIFile::new(
-            "D:\\Midis\\Clubstep.mid",
-            true,
-            Some(&|read| {
-                println!("{}", read);
-            }),
-        ).unwrap();
-
-        let vec = midi.parse_all_tracks(16384).expect("MIDI parse failed");
 
         let cake_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Uniform Buffer"),
