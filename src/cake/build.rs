@@ -25,8 +25,6 @@ fn main() -> Result<(), Box<Error>> {
                     });
 
             if let Some(shader_type) = shader_type {
-                use std::io::Read;
-
                 let source = std::fs::read_to_string(&in_path)?;
 
                 let mut compiler = shaderc::Compiler::new().unwrap();

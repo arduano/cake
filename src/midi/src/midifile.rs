@@ -1,61 +1,124 @@
-use std::{fs::File, io::Read};
+use getset::Getters;
+use to_vec::ToVec;
 
+use crate::{data::{Leaf, TreeSerializer}, errors::MIDILoadError, miditrack::{MIDITrack, MidiTrackOutput}, readers::{DiskReader, MIDIReader, RAMReader}};
 struct TrackPos {
-    pos: i64,
+    pos: u64,
     len: u32,
 }
 
-pub enum MIDILoadError {
-    NotFound,
-    CorruptChunks,
-}
-
+#[derive(Getters)]
 pub struct MIDIFile {
-    reader: File,
+    reader: Box<dyn MIDIReader>,
     track_positions: Vec<TrackPos>,
+
+    #[getset(get = "pub")]
     ppq: u16,
-    track_count: i32,
-    format: u32,
+    #[getset(get = "pub")]
+    track_count: u32,
 }
 
 impl MIDIFile {
-    pub fn new(filename: &str) -> Result<Self, MIDILoadError> {
-        let reader_maybe = File::open(filename);
-        if reader_maybe.is_err() {
-            return Err(MIDILoadError::NotFound);
-        }
-
-        let mut reader = reader_maybe.unwrap();
-
-        let reader_borrow = &mut reader;
-
-        let mut check_header = |text: &str| -> bool {
-            let chars = text.as_bytes();
-            let mut bytes = vec![0 as u8; chars.len()];
-            let read = reader_borrow.read_exact(&mut bytes);
-
-            if read.is_err() {
-                return false;
-            }
-
-            for i in 0..chars.len() {
-                if chars[i] != bytes[i] {
-                    return false;
-                }
-            }
-            return true;
+    pub fn new(
+        filename: &str,
+        load_to_ram: bool,
+        read_progress: Option<&dyn Fn(u32)>,
+    ) -> Result<Self, MIDILoadError> {
+        let mut reader = match load_to_ram {
+            true => Box::new(RAMReader::new(filename)?) as Box<dyn MIDIReader>,
+            false => Box::new(DiskReader::new(filename)?) as Box<dyn MIDIReader>,
         };
 
-        if !check_header("MThd") {
+        reader.assert_header("MThd")?;
+
+        let header_len = reader.read_value(4)?;
+
+        if header_len != 6 {
             return Err(MIDILoadError::CorruptChunks);
+        }
+
+        let _format = reader.read_value(2)?;
+        let _track_count_bad = reader.read_value(2)?;
+        let ppq = reader.read_value(2)? as u16;
+
+        let mut track_count = 0 as u32;
+        let mut track_positions = Vec::<TrackPos>::new();
+        while !reader.is_end()? {
+            reader.assert_header("MTrk")?;
+            track_count += 1;
+            let len = reader.read_value(4)?;
+            let pos = reader.get_position()?;
+            track_positions.push(TrackPos { len, pos });
+            reader.skip(len as u64)?;
+
+            match read_progress {
+                Some(progress) => progress(track_count),
+                _ => {}
+            };
         }
 
         Ok(MIDIFile {
             reader,
-            format: 0,
-            ppq: 0,
-            track_count: 0,
-            track_positions: vec![],
+            ppq,
+            track_count,
+            track_positions,
         })
+    }
+
+    pub fn parse_all_tracks(&mut self, tps: u32) -> Result<(), MIDILoadError> {
+        let mut tracks = self
+            .track_positions
+            .iter()
+            .enumerate()
+            .map(|(i, pos)| {
+                let r = self.reader.open_reader(pos.pos, pos.len as u64, true);
+                MIDITrack::new(r, i as u32)
+            })
+            .to_vec();
+
+        let mut time = 0.0;
+
+        let mut output = MidiTrackOutput::new(self.ppq as u32);
+
+        let mut all_ended = false;
+        while !all_ended {
+            let time_int = (time * tps as f64) as i64;
+            if time_int > i32::MAX as i64 {
+                return Err(MIDILoadError::MIDITooLong);
+            }
+            let time_int = time_int as i32;
+
+            all_ended = true;
+            for track in tracks.iter_mut() {
+                if track.ended() {
+                    continue;
+                }
+                all_ended = false;
+                track.read_tick(&mut output, time_int)?;
+            }
+
+            time += output.last_tempo_time_step();
+        }
+
+        println!("{}", output.queues.note_count());
+
+        let mut trees = Vec::<Leaf>::new();
+
+        for queue in &mut output.queues.queues {
+            let mut tree = TreeSerializer::new(4);
+            loop {
+                match queue.pop_back() {
+                    None => break,
+                    Some(note) => tree.feed_note(note),
+                }
+            }
+            trees.push(tree.complete());
+        }
+
+        let sum: u64 = trees.iter().map(|l| l.count()).sum();
+
+        println!("Nodes: {}", sum);
+
+        Ok(())
     }
 }
