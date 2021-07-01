@@ -4,7 +4,7 @@ use getset::Getters;
 use to_vec::ToVec;
 
 use crate::{
-    data::{IntVector4, Leaf, TreeSerializer},
+    data::{IntVector4, TreeSerializer},
     errors::MIDILoadError,
     miditrack::{MIDITrack, MidiTrackOutput},
     readers::{DiskReader, MIDIReader, RAMReader},
@@ -172,7 +172,7 @@ impl MIDIFile {
         println!("Nodes: {}", sum);
 
         let mut serialized = (0..256)
-            .map(|v| IntVector4::default())
+            .map(|_| IntVector4::default())
             .to_vec();
         for (i, t) in trees.iter().enumerate() {
             serialized[i].val1 = t.serialize_to_vec(&mut serialized);

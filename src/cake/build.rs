@@ -1,7 +1,7 @@
 use shaderc::{self, ShaderKind};
 use std::error::Error;
 
-fn main() -> Result<(), Box<Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     // Tell the build script to only run again if we change our source shaders
     println!("cargo:rerun-if-changed=src/data");
 

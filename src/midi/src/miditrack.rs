@@ -1,11 +1,5 @@
 use getset::Getters;
-use std::{
-    borrow::{Borrow, BorrowMut},
-    cell::{Cell, RefCell, UnsafeCell},
-    collections::VecDeque,
-    rc::Rc,
-    sync::Arc,
-};
+use std::{ cell::UnsafeCell, collections::VecDeque, rc::Rc};
 
 use crate::{data::Note, errors::MIDILoadError, readers::TrackReader};
 

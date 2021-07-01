@@ -134,7 +134,6 @@ struct FetchingFirst {
 struct FetchingSecond {
     first: Leaf,
     half: i32,
-    start: i32,
     end: i32,
 }
 
@@ -157,7 +156,6 @@ impl FetchingFirst {
         SerializerFrame::FetchingSecond(FetchingSecond {
             end: self.end,
             first,
-            start: self.start,
             half: max(self.half, next_event),
         })
     }
@@ -178,7 +176,6 @@ impl SerializerFrame {
 }
 
 pub struct TreeSerializer {
-    time: i32,
     note_stack: LinkedList<Rc<Note>>,
     next_note: Option<Rc<Note>>,
     ended: bool,
@@ -195,7 +192,6 @@ impl TreeSerializer {
         stack_frames.push_front(SerializerFrame::new(0, initial_end));
         let mut serializer = TreeSerializer {
             ended: false,
-            time: 0,
             note_stack: LinkedList::new(),
             next_note: None,
             stack_frames,
