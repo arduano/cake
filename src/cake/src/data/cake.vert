@@ -7,6 +7,6 @@ layout(location = 1) out vec2 position;
 
 void main()
 {
-    position = Texcoord;
+    position = Position;
     gl_Position = vec4(Position * 2 - 1, 0, 1);
 }

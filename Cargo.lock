@@ -172,6 +172,7 @@ dependencies = [
 name = "cake-midi"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "getset",
  "to_vec",
 ]

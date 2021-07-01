@@ -4,6 +4,7 @@ use std::{
     collections::{LinkedList, VecDeque},
     rc::Rc,
 };
+use bytemuck::{Pod, Zeroable};
 
 pub enum Leaf {
     Note(Option<Rc<Note>>),
@@ -17,12 +18,58 @@ impl Leaf {
             &Leaf::Note(_) => 1 as u64,
         }
     }
+
+    pub fn serialize_to_vec(&self, vec: &mut Vec<IntVector4>) -> i32 {
+        match &self {
+            &Leaf::Node(node) => {
+                let lower = node.lower.serialize_to_vec(vec);
+                let upper = node.upper.serialize_to_vec(vec);
+
+                vec.push(IntVector4 {
+                    val1: node.cutoff,
+                    val2: lower,
+                    val3: upper,
+                    val4: 0,
+                });
+
+                vec.len() as i32 - 1
+            }
+            &Self::Note(note) => {
+                vec.push(match note {
+                    None => IntVector4 {
+                        val1: 0,
+                        val2: 0,
+                        val3: -1,
+                        val4: 0,
+                    },
+                    Some(note) => IntVector4 {
+                        val1: note.start,
+                        val2: note.end,
+                        val3: note.color,
+                        val4: note.note_num,
+                    },
+                });
+
+                -(vec.len() as i32 - 1)
+            }
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Pod, Copy, Clone, Zeroable)]
+pub struct IntVector4 {
+    pub val1: i32,
+    pub val2: i32,
+    pub val3: i32,
+    pub val4: i32,
 }
 
 pub struct Note {
     pub start: i32,
     pub end: i32,
     pub color: i32,
+    pub note_num: i32,
 }
 
 impl Note {
@@ -37,6 +84,7 @@ impl Note {
             start,
             end,
             color: Note::encode_color(track, channel),
+            note_num: 0,
         }
     }
 

@@ -1,7 +1,12 @@
 use getset::Getters;
 use to_vec::ToVec;
 
-use crate::{data::{Leaf, TreeSerializer}, errors::MIDILoadError, miditrack::{MIDITrack, MidiTrackOutput}, readers::{DiskReader, MIDIReader, RAMReader}};
+use crate::{
+    data::{IntVector4, Leaf, TreeSerializer},
+    errors::MIDILoadError,
+    miditrack::{MIDITrack, MidiTrackOutput},
+    readers::{DiskReader, MIDIReader, RAMReader},
+};
 struct TrackPos {
     pos: u64,
     len: u32,
@@ -65,7 +70,7 @@ impl MIDIFile {
         })
     }
 
-    pub fn parse_all_tracks(&mut self, tps: u32) -> Result<(), MIDILoadError> {
+    pub fn parse_all_tracks(&mut self, tps: u32) -> Result<Vec<IntVector4>, MIDILoadError> {
         let mut tracks = self
             .track_positions
             .iter()
@@ -119,6 +124,18 @@ impl MIDIFile {
 
         println!("Nodes: {}", sum);
 
-        Ok(())
+        let mut serialized = (0..256)
+            .map(|v| IntVector4 {
+                val1: 0,
+                val2: 0,
+                val3: 0,
+                val4: 0,
+            })
+            .to_vec();
+        for (i, t) in trees.iter().enumerate() {
+            serialized[i].val1 = t.serialize_to_vec(&mut serialized);
+        }
+
+        Ok(serialized)
     }
 }

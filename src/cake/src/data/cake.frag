@@ -14,10 +14,15 @@ layout (binding = 0) uniform UniformBuffer
 {
     int width;
     int height;
-    int start;
-    int end;
-    int keyCount;
+    int _start;
+    int _end;
+    int _keyCount;
 };
+
+const int start = 0;
+const int end = 1505340;
+
+const int keyCount = 128;
 
 layout (binding = 1) readonly buffer BinaryTree
 {
@@ -52,6 +57,11 @@ int getNoteAt(int key, int time) {
     return steps;
 }
 
+bool midi_is_white(int p) {
+  float k = fract(p * 5 / 12.0);
+  return 0.1 < k && k < 0.55;
+}
+
 void main()
 {
     // int testKey = int(floor(position.x * keyCount));
@@ -82,6 +92,13 @@ void main()
 
     int steps = getNoteAt(key, time);
     fsout_Color = vec4(0, 0, 1, 1) / 10.0 * steps;
+
+    // if (!midi_is_white(key)) {
+    //     fsout_Color = vec4(1, 1, 1, 1);
+    // } else {
+    //     fsout_Color = vec4(0, 0, 0, 1);
+    // }
+
     return;
 
     // if(blackKey == -1 || note.z == -1) {
