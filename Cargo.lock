@@ -167,13 +167,35 @@ dependencies = [
  "cgmath",
  "futures",
  "getset",
- "gfx-hal 0.9.0",
  "image",
  "imgui",
  "imgui-wgpu",
  "imgui-winit-support",
  "serde",
  "shaderc",
+ "stretch",
+ "wgpu",
+ "wgpu-subscriber",
+ "winit",
+]
+
+[[package]]
+name = "cake-gui"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "bytemuck",
+ "cake-midi",
+ "cgmath",
+ "futures",
+ "getset",
+ "image",
+ "imgui",
+ "imgui-wgpu",
+ "imgui-winit-support",
+ "serde",
+ "shaderc",
+ "stretch",
  "wgpu",
  "wgpu-subscriber",
  "winit",
@@ -562,29 +584,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 
 [[package]]
-name = "drm-fourcc"
-version = "2.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebbf3a5ed4671aabffefce172ff43d69c1f27dd2c6aea28e5212a70f32ada0cf"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "either"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
-
-[[package]]
-name = "external-memory"
-version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4dfe8d292b014422776a8c516862d2bff8a81b223a4461dfdc45f3862dc9d39"
-dependencies = [
- "bitflags",
- "drm-fourcc",
-]
 
 [[package]]
 name = "fixedbitset"
@@ -751,7 +754,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ccf8711c9994dfa34337466bee3ae1462e172874c432ce4eb120ab2e98d39cf"
 dependencies = [
  "fxhash",
- "gfx-hal 0.8.0",
+ "gfx-hal",
  "spirv_cross",
 ]
 
@@ -764,7 +767,7 @@ dependencies = [
  "arrayvec",
  "bitflags",
  "gfx-auxil",
- "gfx-hal 0.8.0",
+ "gfx-hal",
  "libloading 0.7.0",
  "log",
  "parking_lot",
@@ -788,7 +791,7 @@ dependencies = [
  "bitflags",
  "d3d12",
  "gfx-auxil",
- "gfx-hal 0.8.0",
+ "gfx-hal",
  "log",
  "parking_lot",
  "range-alloc",
@@ -805,7 +808,7 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ac55ada4bfcd35479b3421eea324d36d7da5f724e2f66ecb36d4efdb7041a5e"
 dependencies = [
- "gfx-hal 0.8.0",
+ "gfx-hal",
  "log",
  "raw-window-handle",
 ]
@@ -819,13 +822,13 @@ dependencies = [
  "arrayvec",
  "bitflags",
  "fxhash",
- "gfx-hal 0.8.0",
+ "gfx-hal",
  "glow",
  "js-sys",
  "khronos-egl",
  "libloading 0.7.0",
  "log",
- "naga 0.4.2",
+ "naga",
  "parking_lot",
  "raw-window-handle",
  "wasm-bindgen",
@@ -845,10 +848,10 @@ dependencies = [
  "copyless",
  "foreign-types",
  "fxhash",
- "gfx-hal 0.8.0",
+ "gfx-hal",
  "log",
  "metal",
- "naga 0.4.2",
+ "naga",
  "objc",
  "parking_lot",
  "profiling",
@@ -867,10 +870,10 @@ dependencies = [
  "ash",
  "byteorder",
  "core-graphics-types",
- "gfx-hal 0.8.0",
+ "gfx-hal",
  "inplace_it",
  "log",
- "naga 0.4.2",
+ "naga",
  "objc",
  "parking_lot",
  "raw-window-handle",
@@ -885,20 +888,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d285bfd566f6b9134af908446ca350c0a1047495dfb9bbd826e701e8ee1d259"
 dependencies = [
  "bitflags",
- "naga 0.4.2",
- "raw-window-handle",
- "thiserror",
-]
-
-[[package]]
-name = "gfx-hal"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fbb575ea793dd0507b3082f4f2cde62dc9f3cebd98f5cd49ba2a4da97a976fd"
-dependencies = [
- "bitflags",
- "external-memory",
- "naga 0.5.0",
+ "naga",
  "raw-window-handle",
  "thiserror",
 ]
@@ -1189,6 +1179,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "libm"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fc7aa29613bd6a620df431842069224d8bc9011086b1db4c0e0cd47fa03ec9a"
+
+[[package]]
 name = "lock_api"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1344,20 +1340,6 @@ dependencies = [
  "num-traits",
  "petgraph",
  "spirv_headers",
- "thiserror",
-]
-
-[[package]]
-name = "naga"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef670817eef03d356d5a509ea275e7dd3a78ea9e24261ea3cb2dfed1abb08f64"
-dependencies = [
- "bit-set",
- "bitflags",
- "fxhash",
- "log",
- "num-traits",
  "thiserror",
 ]
 
@@ -1755,9 +1737,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.5.4"
+version = "1.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d07a8629359eb56f1e2fb1652bb04212c072a87ba68546a04065d525673ac461"
+checksum = "2a26af418b574bd56588335b3a3659a65725d4e636eb1016c2f9e3b38c7cc759"
 dependencies = [
  "regex-syntax",
 ]
@@ -1945,6 +1927,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "418bb14643aa55a7841d5303f72cf512cfb323b8cc221d51580500a1ca75206c"
 dependencies = [
  "lock_api",
+]
+
+[[package]]
+name = "stretch"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b0dc6d20ce137f302edf90f9cd3d278866fd7fb139efca6f246161222ad6d87"
+dependencies = [
+ "lazy_static",
+ "libm",
 ]
 
 [[package]]
@@ -2307,7 +2299,7 @@ dependencies = [
  "arrayvec",
  "js-sys",
  "log",
- "naga 0.4.2",
+ "naga",
  "parking_lot",
  "raw-window-handle",
  "smallvec",
@@ -2335,11 +2327,11 @@ dependencies = [
  "gfx-backend-gl",
  "gfx-backend-metal",
  "gfx-backend-vulkan",
- "gfx-hal 0.8.0",
+ "gfx-hal",
  "gpu-alloc",
  "gpu-descriptor",
  "log",
- "naga 0.4.2",
+ "naga",
  "parking_lot",
  "profiling",
  "raw-window-handle",

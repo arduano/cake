@@ -1,77 +1,40 @@
-use __core::fmt::Debug;
-use __core::mem::size_of;
-use bytemuck::{Pod, Zeroable};
-use futures::executor::block_on;
-use imgui::*;
-use imgui_wgpu::{Renderer, RendererConfig, Texture, TextureConfig};
-use midi::data::IntVector4;
-use midi::midifile::MIDIFile;
-use std::fs::{self, File};
-use std::io::Read;
-use std::num::NonZeroU32;
-use std::time::Instant;
-use wgpu::{util::DeviceExt, BlendState, Extent3d};
-use winit::window::WindowBuilder;
+use std::{
+    rc::Rc,
+    sync::{Arc, Mutex},
+    thread,
+    time::Instant,
+};
+
+use imgui::{im_str, Condition, Context, FontSource, ImColor32, StyleVar};
+use imgui_wgpu::{Renderer, RendererConfig};
+use wgpu::{Device, Queue};
 use winit::{
-    dpi::LogicalSize,
     event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::Window,
 };
 
+use crate::application::ApplicationGraphics;
 
+pub trait DisplayWindow {
+    fn init_imgui(&mut self, imgui: &mut Context);
 
-struct CakeApplication {
+    fn create_window(&self) -> (Window, EventLoop<()>);
 
+    fn render(&mut self);
 }
 
-fn main() {
-    wgpu_subscriber::initialize_default_subscriber(None);
+pub fn open_window() {}
 
-    let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
+pub fn show_window(
+    window: Window,
+    event_loop: EventLoop<()>,
+    mut display_window: Box<dyn DisplayWindow>,
+    graphics: &Arc<Mutex<dyn ApplicationGraphics>>,
+) {
+    let size = window.inner_size();
 
-    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::HighPerformance,
-        // compatible_surface: Some(&surface),
-        compatible_surface: None,
-    }))
-    .unwrap();
-
-    let (device, queue) = block_on(adapter.request_device(
-        &wgpu::DeviceDescriptor {
-            label: None,
-            features: wgpu::Features::empty(),
-            limits: wgpu::Limits::default(),
-        },
-        None,
-    ))
-    .unwrap();
-
-    println!("Creating swapchain");
-
-    // Set up window and GPU
-    let event_loop = EventLoop::new();
-
-    let (window, size, surface) = {
-        let version = env!("CARGO_PKG_VERSION");
-
-        let window = WindowBuilder::new()
-            .with_transparent(true)
-            .build(&event_loop)
-            .unwrap();
-        window.set_inner_size(LogicalSize {
-            width: 1280.0,
-            height: 720.0,
-        });
-        window.set_title(&format!("Cake {}", version));
-        let size = window.inner_size();
-
-        let surface = unsafe { instance.create_surface(&window) };
-
-        (window, size, surface)
-    };
-
-    let hidpi_factor = window.scale_factor();
+    let graphics = graphics.clone();
 
     // Set up swap chain
     let sc_desc = wgpu::SwapChainDescriptor {
@@ -82,7 +45,16 @@ fn main() {
         present_mode: wgpu::PresentMode::Mailbox,
     };
 
-    let mut swap_chain = device.create_swap_chain(&surface, &sc_desc);
+    let (surface, mut swap_chain) = {
+        let graphics = graphics.lock().unwrap();
+
+        let surface = unsafe { graphics.instance().create_surface(&window) };
+        let swap_chain = graphics.device().create_swap_chain(&surface, &sc_desc);
+
+        (surface, swap_chain)
+    };
+
+    let hidpi_factor = window.scale_factor();
 
     // Set up dear imgui
     let mut imgui = imgui::Context::create();
@@ -107,7 +79,7 @@ fn main() {
     // }]);
 
     imgui.fonts().add_font(&[FontSource::TtfData {
-        data: include_bytes!("data/OpenSans-Regular.ttf"),
+        data: include_bytes!("../../cake/src/data/OpenSans-Regular.ttf"),
         config: Some(imgui::FontConfig {
             oversample_h: 4,
             pixel_snap_h: true,
@@ -117,27 +89,26 @@ fn main() {
         size_pixels: font_size,
     }]);
 
-    //
-    // Set up dear imgui wgpu renderer
-    //
-    // let clear_color = wgpu::Color {
-    //     r: 0.1,
-    //     g: 0.2,
-    //     b: 0.3,
-    //     a: 1.0,
-    // };
-
     let renderer_config = RendererConfig {
         texture_format: sc_desc.format,
         ..Default::default()
     };
 
-    let mut renderer = Renderer::new(&mut imgui, &device, &queue, renderer_config);
+    let mut renderer = {
+        let graphics = graphics.lock().unwrap();
+        Renderer::new(
+            &mut imgui,
+            graphics.device(),
+            graphics.queue(),
+            renderer_config,
+        )
+    };
+
+    let graphics = graphics.clone();
 
     let mut last_frame = Instant::now();
 
     let mut last_cursor = None;
-
     // Event loop
     event_loop.run(move |event, _, control_flow| {
         *control_flow = if cfg!(feature = "metal-auto-capture") {
@@ -160,7 +131,10 @@ fn main() {
                     present_mode: wgpu::PresentMode::Mailbox,
                 };
 
-                swap_chain = device.create_swap_chain(&surface, &sc_desc);
+                {
+                    let graphics = graphics.lock().unwrap();
+                    swap_chain = graphics.device().create_swap_chain(&surface, &sc_desc);
+                }
             }
             Event::WindowEvent {
                 event:
@@ -242,8 +216,14 @@ fn main() {
                         // imgui::Image::new(example_texture_id, new_example_size.unwrap()).build(&ui);
                     });
 
-                let mut encoder: wgpu::CommandEncoder =
-                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+                display_window.render();
+
+                let mut encoder: wgpu::CommandEncoder = {
+                    let graphics = graphics.lock().unwrap();
+                    graphics
+                        .device()
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None })
+                };
 
                 if last_cursor != Some(ui.mouse_cursor()) {
                     last_cursor = Some(ui.mouse_cursor());
@@ -270,13 +250,17 @@ fn main() {
 
                 let draw_data = ui.render();
 
-                renderer
-                    .render(draw_data, &queue, &device, &mut rpass)
-                    .expect("Rendering failed");
+                {
+                    let graphics = graphics.lock().unwrap();
 
-                drop(rpass);
+                    renderer
+                        .render(draw_data, graphics.queue(), graphics.device(), &mut rpass)
+                        .expect("Rendering failed");
 
-                queue.submit(Some(encoder.finish()));
+                    drop(rpass);
+
+                    graphics.queue().submit(Some(encoder.finish()));
+                }
             }
             _ => (),
         }
