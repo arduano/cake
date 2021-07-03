@@ -1,27 +1,9 @@
-use __core::fmt::Debug;
-use __core::mem::size_of;
-use bytemuck::{Pod, Zeroable};
-use futures::executor::block_on;
 use gui::application::run_application_default;
 use gui::window::{DisplayWindow, WindowData};
 use imgui::*;
-use imgui_wgpu::{Renderer, RendererConfig, Texture, TextureConfig};
-use midi::data::IntVector4;
-use midi::midifile::MIDIFile;
-use std::fs::{self, File};
-use std::io::Read;
-use std::num::NonZeroU32;
-use std::time::Instant;
 use wgpu::Instance;
-use wgpu::{util::DeviceExt, BlendState, Extent3d};
-use winit::platform::run_return::EventLoopExtRunReturn;
 use winit::window::WindowBuilder;
-use winit::{
-    dpi::LogicalSize,
-    event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
-    window::Window,
-};
+use winit::{dpi::LogicalSize, event_loop::EventLoop};
 
 struct CakeData {}
 
@@ -30,7 +12,7 @@ struct CakeWindow {
 }
 
 enum CakeEvent {
-    E
+    E,
 }
 
 impl CakeWindow {
@@ -94,5 +76,11 @@ fn main() {
 
     let model = CakeData {};
 
-    run_application_default(instance, event_loop, Box::new(model), Box::new(main_window), 1);
+    run_application_default(
+        instance,
+        event_loop,
+        Box::new(model),
+        Box::new(main_window),
+        1,
+    );
 }

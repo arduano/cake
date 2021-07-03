@@ -1,22 +1,15 @@
-use std::{
-    borrow::Borrow,
-    collections::HashMap,
-    rc::Rc,
-    sync::{Arc, Mutex, RwLock},
-    thread,
-    time::Instant,
-};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use futures::executor::block_on;
 use imgui::{im_str, Condition, Context, ImColor32, MouseCursor, StyleVar};
 use imgui_wgpu::{Renderer, RendererConfig};
 use imgui_winit_support::WinitPlatform;
-use wgpu::{Adapter, Device, Instance, Queue, Surface};
+use wgpu::{Adapter, Device, Instance, Queue};
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     platform::run_return::EventLoopExtRunReturn,
-    window::{Window, WindowId},
+    window::WindowId,
 };
 
 use crate::window::{DisplayWindow, WindowData};
@@ -74,7 +67,6 @@ struct OpenDisplayWindow<Model, Ev> {
     imgui: Context,
     renderer: Renderer,
     last_frame: Instant,
-    last_cursor: Option<MouseCursor>,
 }
 
 impl<Model, Ev> OpenDisplayWindow<Model, Ev> {
@@ -93,16 +85,14 @@ impl<Model, Ev> OpenDisplayWindow<Model, Ev> {
             ..Default::default()
         };
 
-        let mut renderer = Renderer::new(
+        let renderer = Renderer::new(
             &mut imgui,
             graphics.device(),
             graphics.queue(),
             renderer_config,
         );
 
-        let mut last_frame = Instant::now();
-
-        let mut last_cursor = None;
+        let last_frame = Instant::now();
 
         OpenDisplayWindow {
             window,
@@ -110,7 +100,6 @@ impl<Model, Ev> OpenDisplayWindow<Model, Ev> {
             imgui,
             renderer,
             last_frame,
-            last_cursor,
         }
     }
 }
