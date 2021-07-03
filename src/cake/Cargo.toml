@@ -23,6 +23,7 @@ imgui-winit-support = "0.7"
 wgpu-subscriber = "0.1"
 
 midi = { path = "../midi", package = "cake-midi" }
+gui = { path = "../gui", package = "cake-gui" }
 
 [build-dependencies]
 shaderc = "0.7.2"

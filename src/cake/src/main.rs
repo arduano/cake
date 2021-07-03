@@ -11,6 +11,7 @@ use std::io::Read;
 use std::num::NonZeroU32;
 use std::time::Instant;
 use wgpu::{util::DeviceExt, BlendState, Extent3d};
+use winit::platform::run_return::EventLoopExtRunReturn;
 use winit::window::WindowBuilder;
 use winit::{
     dpi::LogicalSize,
@@ -19,11 +20,7 @@ use winit::{
     window::Window,
 };
 
-
-
-struct CakeApplication {
-
-}
+struct CakeApplication {}
 
 fn main() {
     wgpu_subscriber::initialize_default_subscriber(None);
@@ -50,7 +47,7 @@ fn main() {
     println!("Creating swapchain");
 
     // Set up window and GPU
-    let event_loop = EventLoop::new();
+    let mut event_loop = EventLoop::new();
 
     let (window, size, surface) = {
         let version = env!("CARGO_PKG_VERSION");
@@ -79,7 +76,7 @@ fn main() {
         format: wgpu::TextureFormat::Bgra8UnormSrgb,
         width: size.width as u32,
         height: size.height as u32,
-        present_mode: wgpu::PresentMode::Mailbox,
+        present_mode: wgpu::PresentMode::Fifo,
     };
 
     let mut swap_chain = device.create_swap_chain(&surface, &sc_desc);
@@ -139,7 +136,7 @@ fn main() {
     let mut last_cursor = None;
 
     // Event loop
-    event_loop.run(move |event, _, control_flow| {
+    event_loop.run_return(move |event, _, control_flow| {
         *control_flow = if cfg!(feature = "metal-auto-capture") {
             ControlFlow::Exit
         } else {
@@ -182,7 +179,7 @@ fn main() {
                 *control_flow = ControlFlow::Exit;
             }
             Event::MainEventsCleared => window.request_redraw(),
-            Event::RedrawEventsCleared => {
+            Event::RedrawRequested(window_id) => {
                 let now = Instant::now();
                 imgui.io_mut().update_delta_time(now - last_frame);
                 last_frame = now;
@@ -239,6 +236,9 @@ fn main() {
                     .build(&ui, || {
                         new_example_size = Some(ui.content_region_avail());
                         ui.text("Hello World!");
+                        if ui.is_window_hovered() {
+                            ui.set_mouse_cursor(Some(MouseCursor::Hand));
+                        }
                         // imgui::Image::new(example_texture_id, new_example_size.unwrap()).build(&ui);
                     });
 
