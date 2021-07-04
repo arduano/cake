@@ -1,5 +1,8 @@
-use gui::application::run_application_default;
-use gui::window::{DisplayWindow, WindowData};
+use std::time::Instant;
+
+use __core::time::Duration;
+use gui::application::{run_application_default, ApplicationGraphics};
+use gui::window::{DisplayWindow, ImGuiDisplayContext, WindowData};
 use imgui::*;
 use wgpu::Instance;
 use winit::window::WindowBuilder;
@@ -35,7 +38,7 @@ impl CakeWindow {
     }
 }
 
-impl<Ev> DisplayWindow<CakeData, Ev> for CakeWindow {
+impl DisplayWindow<CakeData, i32> for CakeWindow {
     fn init_imgui(&mut self, imgui: &mut Context) {
         let hidpi_factor = self.window_data.window.scale_factor();
         let font_size = (16.0 * hidpi_factor) as f32;
@@ -61,8 +64,117 @@ impl<Ev> DisplayWindow<CakeData, Ev> for CakeWindow {
         &mut self.window_data
     }
 
-    fn render(&mut self, model: &CakeData) {
-        todo!()
+    fn render(
+        &mut self,
+        graphics: &mut ApplicationGraphics,
+        imgui_context: &mut ImGuiDisplayContext,
+        model: &mut CakeData,
+        delta: Duration,
+    ) {
+        let imgui = &mut imgui_context.imgui;
+        let platform = &mut imgui_context.platform;
+        let renderer = &mut imgui_context.renderer;
+
+        if self.window_data().swap_chain.is_none() {
+            self.create_and_set_swapchain(&graphics, &model);
+        }
+
+        let swap_chain = self.window_data().swap_chain.as_ref().unwrap();
+        let window = &self.window_data().window;
+
+        imgui.io_mut().update_delta_time(delta);
+
+        let frame = match swap_chain.get_current_frame() {
+            Ok(frame) => frame,
+            Err(e) => {
+                eprintln!("dropped frame: {:?}", e);
+                return;
+            }
+        };
+        platform
+            .prepare_frame(imgui.io_mut(), &window)
+            .expect("Failed to prepare frame");
+        let ui = imgui.frame();
+
+        // Render example normally at background
+        let size = ui.io().display_size;
+
+        // Store the new size of Image() or None to indicate that the window is collapsed.
+        let mut new_example_size: Option<[f32; 2]> = None;
+
+        let nopadding = ui.push_style_vars(&[
+            StyleVar::WindowPadding([-1.0, -1.0]),
+            StyleVar::WindowBorderSize(0.0),
+        ]);
+
+        imgui::Window::new(im_str!("Root"))
+            .no_nav()
+            .title_bar(false)
+            .draw_background(false)
+            .movable(false)
+            .scrollable(false)
+            .bring_to_front_on_focus(false)
+            .collapsible(false)
+            .resizable(false)
+            .collapsed(false, Condition::Always)
+            .always_use_window_padding(false)
+            .size(size, Condition::Always)
+            .position([0.0, 0.0], Condition::Always)
+            .build(&ui, || {
+                new_example_size = Some(ui.content_region_avail());
+                // imgui::Image::new(example_texture_id, new_example_size.unwrap()).build(&ui);
+                ui.get_window_draw_list()
+                    .add_rect([0.0, 0.0], [100.0, 100.0], ImColor32::BLACK)
+                    .filled(true)
+                    .build();
+            });
+
+        nopadding.pop(&ui);
+
+        imgui::Window::new(im_str!("Cube"))
+            .size([512.0, 512.0], Condition::FirstUseEver)
+            .build(&ui, || {
+                new_example_size = Some(ui.content_region_avail());
+                ui.text("Hello World!");
+                if ui.is_window_hovered() {
+                    ui.set_mouse_cursor(Some(MouseCursor::Hand));
+                }
+                // imgui::Image::new(example_texture_id, new_example_size.unwrap()).build(&ui);
+            });
+
+        let mut encoder: wgpu::CommandEncoder = graphics
+            .device()
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        platform.prepare_render(&ui, &window);
+
+        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: None,
+            color_attachments: &[wgpu::RenderPassColorAttachment {
+                view: &frame.output.view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.1,
+                        g: 0.2,
+                        b: 0.3,
+                        a: 0.1, // semi-transparent background
+                    }),
+                    store: true,
+                },
+            }],
+            depth_stencil_attachment: None,
+        });
+
+        let draw_data = ui.render();
+
+        renderer
+            .render(draw_data, graphics.queue(), graphics.device(), &mut rpass)
+            .expect("Rendering failed");
+
+        drop(rpass);
+
+        graphics.queue().submit(Some(encoder.finish()));
     }
 }
 

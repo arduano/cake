@@ -1,5 +1,9 @@
+use std::time::Duration;
+
 use imgui::Context;
 
+use imgui_wgpu::Renderer;
+use imgui_winit_support::WinitPlatform;
 use wgpu::{Instance, Surface, SwapChain};
 use winit::window::Window;
 
@@ -34,10 +38,20 @@ pub trait DisplayWindow<Model, Ev> {
     }
 
     fn create_and_set_swapchain(&mut self, graphics: &ApplicationGraphics, model: &Model) {
-        self.window_data_mut().swap_chain = Some(self.create_swapchain(graphics, model))
+        self.window_data_mut().swap_chain = Some(self.create_swapchain(graphics, model));
     }
 
-    fn render(&mut self, model: &Model);
+    fn reset_swapchain(&mut self) {
+        self.window_data_mut().swap_chain = None;
+    }
+
+    fn render(
+        &mut self,
+        graphics: &mut ApplicationGraphics,
+        imgui_context: &mut ImGuiDisplayContext,
+        model: &mut Model,
+        delta: Duration,
+    );
 }
 
 pub struct WindowData {
@@ -55,4 +69,10 @@ impl WindowData {
             swap_chain: None,
         }
     }
+}
+
+pub struct ImGuiDisplayContext {
+    pub platform: WinitPlatform,
+    pub imgui: Context,
+    pub renderer: Renderer,
 }
