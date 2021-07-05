@@ -1,5 +1,5 @@
 use gui::application::{run_application_default, ApplicationGraphics};
-use gui::elements::{Element};
+use gui::elements::Element;
 use gui::window::{DisplayWindow, ImGuiDisplayContext, WindowData};
 use imgui::*;
 use std::time::{Duration, Instant};
@@ -37,7 +37,7 @@ impl CakeWindow {
             use stretch::geometry::Size;
             use stretch::style::*;
 
-            use gui::elements::ShapeElement;
+            use gui::elements::{ClickableShapeElementTest, ShapeElement};
 
             ShapeElement::<CakeData>::new(
                 ImColor32::BLACK,
@@ -49,6 +49,10 @@ impl CakeWindow {
                     ..Default::default()
                 },
                 vec![
+                    ClickableShapeElementTest::<CakeData>::new(
+                        ImColor32::from_rgb(255, 255, 255),
+                        vec![],
+                    ),
                     ShapeElement::<CakeData>::new(
                         ImColor32::from_rgb(255, 0, 0),
                         Style {
