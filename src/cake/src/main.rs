@@ -1,9 +1,9 @@
-use std::time::Instant;
-
-use __core::time::Duration;
 use gui::application::{run_application_default, ApplicationGraphics};
+use gui::elements::{Element};
 use gui::window::{DisplayWindow, ImGuiDisplayContext, WindowData};
 use imgui::*;
+use std::time::{Duration, Instant};
+use stretch::number::Number;
 use wgpu::Instance;
 use winit::window::WindowBuilder;
 use winit::{dpi::LogicalSize, event_loop::EventLoop};
@@ -12,6 +12,7 @@ struct CakeData {}
 
 struct CakeWindow {
     window_data: WindowData,
+    root_element: Box<Element<CakeData>>,
 }
 
 enum CakeEvent {
@@ -32,8 +33,91 @@ impl CakeWindow {
         });
         window.set_title(&format!("Cake {}", version));
 
+        let root_element = {
+            use stretch::geometry::Size;
+            use stretch::style::*;
+
+            use gui::elements::ShapeElement;
+
+            ShapeElement::<CakeData>::new(
+                ImColor32::BLACK,
+                Style {
+                    size: Size {
+                        width: Dimension::Percent(1.0),
+                        height: Dimension::Points(50.0),
+                    },
+                    ..Default::default()
+                },
+                vec![
+                    ShapeElement::<CakeData>::new(
+                        ImColor32::from_rgb(255, 0, 0),
+                        Style {
+                            size: Size {
+                                width: Dimension::Percent(0.1),
+                                height: Dimension::Points(50.0),
+                            },
+                            flex_grow: 0.0,
+                            ..Default::default()
+                        },
+                        vec![],
+                    ),
+                    ShapeElement::<CakeData>::new(
+                        ImColor32::from_rgb(0, 255, 0),
+                        Style {
+                            size: Size {
+                                width: Dimension::Percent(0.1),
+                                height: Dimension::Points(50.0),
+                            },
+                            flex_grow: 0.0,
+                            ..Default::default()
+                        },
+                        vec![],
+                    ),
+                    ShapeElement::<CakeData>::new(
+                        ImColor32::from_rgb(0, 0, 255),
+                        Style {
+                            size: Size {
+                                width: Dimension::Percent(0.1),
+                                height: Dimension::Points(50.0),
+                            },
+                            flex_grow: 0.0,
+                            ..Default::default()
+                        },
+                        vec![],
+                    ),
+                    ShapeElement::<CakeData>::new(
+                        ImColor32::from_rgb(255, 0, 255),
+                        Style {
+                            size: Size {
+                                width: Dimension::Points(500.0),
+                                height: Dimension::Points(50.0),
+                            },
+                            flex_grow: 0.0,
+                            flex_shrink: 1.0,
+                            ..Default::default()
+                        },
+                        vec![],
+                    ),
+                    ShapeElement::<CakeData>::new(
+                        ImColor32::from_rgb(255, 255, 0),
+                        Style {
+                            size: Size {
+                                width: Dimension::Percent(1.0),
+                                height: Dimension::Points(50.0),
+                            },
+                            flex_grow: 0.0,
+                            flex_shrink: 2.0,
+                            ..Default::default()
+                        },
+                        vec![],
+                    ),
+                ],
+            )
+        };
+
         CakeWindow {
             window_data: WindowData::new(window, instance),
+            root_element: root_element,
         }
     }
 }
@@ -69,9 +153,9 @@ impl DisplayWindow<CakeData, i32> for CakeWindow {
         graphics: &mut ApplicationGraphics,
         imgui_context: &mut ImGuiDisplayContext,
         model: &mut CakeData,
+        imgui: &mut Context,
         delta: Duration,
     ) {
-        let imgui = &mut imgui_context.imgui;
         let platform = &mut imgui_context.platform;
         let renderer = &mut imgui_context.renderer;
 
@@ -79,10 +163,9 @@ impl DisplayWindow<CakeData, i32> for CakeWindow {
             self.create_and_set_swapchain(&graphics, &model);
         }
 
-        let swap_chain = self.window_data().swap_chain.as_ref().unwrap();
-        let window = &self.window_data().window;
-
         imgui.io_mut().update_delta_time(delta);
+
+        let swap_chain = self.window_data().swap_chain.as_ref().unwrap();
 
         let frame = match swap_chain.get_current_frame() {
             Ok(frame) => frame,
@@ -91,9 +174,14 @@ impl DisplayWindow<CakeData, i32> for CakeWindow {
                 return;
             }
         };
-        platform
-            .prepare_frame(imgui.io_mut(), &window)
-            .expect("Failed to prepare frame");
+
+        {
+            let window = &self.window_data().window;
+            platform
+                .prepare_frame(imgui.io_mut(), &window)
+                .expect("Failed to prepare frame");
+        }
+
         let ui = imgui.frame();
 
         // Render example normally at background
@@ -123,10 +211,27 @@ impl DisplayWindow<CakeData, i32> for CakeWindow {
             .build(&ui, || {
                 new_example_size = Some(ui.content_region_avail());
                 // imgui::Image::new(example_texture_id, new_example_size.unwrap()).build(&ui);
-                ui.get_window_draw_list()
-                    .add_rect([0.0, 0.0], [100.0, 100.0], ImColor32::BLACK)
-                    .filled(true)
-                    .build();
+                // ui.get_window_draw_list()
+                //     .add_rect([0.0, 0.0], [100.0, 100.0], ImColor32::BLACK)
+                //     .filled(true)
+                //     .build();
+                let mut stretch = stretch::node::Stretch::new();
+                let node = self
+                    .root_element
+                    .layout(&mut stretch, model)
+                    .expect("Failed to retreive layout!");
+                let window_size = ui.window_size();
+                stretch
+                    .compute_layout(
+                        node,
+                        stretch::geometry::Size {
+                            width: Number::Defined(window_size[0]),
+                            height: Number::Defined(window_size[1]),
+                        },
+                    )
+                    .expect("Failed to compute layout!");
+
+                self.root_element.render(&stretch, &ui, model);
             });
 
         nopadding.pop(&ui);
@@ -146,6 +251,7 @@ impl DisplayWindow<CakeData, i32> for CakeWindow {
             .device()
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
+        let window = &self.window_data().window;
         platform.prepare_render(&ui, &window);
 
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -188,11 +294,5 @@ fn main() {
 
     let model = CakeData {};
 
-    run_application_default(
-        instance,
-        event_loop,
-        Box::new(model),
-        Box::new(main_window),
-        1,
-    );
+    run_application_default(instance, event_loop, Box::new(model), Box::new(main_window));
 }

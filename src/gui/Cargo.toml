@@ -15,11 +15,11 @@ wgpu = "0.8.1"
 imgui = "0.7"
 imgui-wgpu = "0.15.1"
 stretch = "0.3.2"
+to_vec = "0.1.0"
 
 bytemuck = { version = "1.4", features = ["derive"] }
 cgmath = "0.18"
 futures = "0.3"
 imgui-winit-support = "0.7"
 wgpu-subscriber = "0.1"
-
 midi = { path = "../midi", package = "cake-midi" }

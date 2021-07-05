@@ -197,6 +197,7 @@ dependencies = [
  "serde",
  "shaderc",
  "stretch",
+ "to_vec",
  "wgpu",
  "wgpu-subscriber",
  "winit",

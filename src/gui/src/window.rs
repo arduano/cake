@@ -31,7 +31,7 @@ pub trait DisplayWindow<Model, Ev> {
             format: self.swapchain_texture_format(),
             width: size.width as u32,
             height: size.height as u32,
-            present_mode: wgpu::PresentMode::Mailbox,
+            present_mode: wgpu::PresentMode::Fifo,
         };
 
         graphics.device().create_swap_chain(surface, &sc_desc)
@@ -50,6 +50,7 @@ pub trait DisplayWindow<Model, Ev> {
         graphics: &mut ApplicationGraphics,
         imgui_context: &mut ImGuiDisplayContext,
         model: &mut Model,
+        imgui: &mut Context,
         delta: Duration,
     );
 }
@@ -73,6 +74,5 @@ impl WindowData {
 
 pub struct ImGuiDisplayContext {
     pub platform: WinitPlatform,
-    pub imgui: Context,
     pub renderer: Renderer,
 }
