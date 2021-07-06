@@ -3,9 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use imgui::{
-    im_str, ChildWindow, ImColor32, ItemHoveredFlags, MouseButton, MouseCursor, Ui, WindowFlags,
-};
+use imgui::{im_str, ChildWindow, ImColor32, ItemHoveredFlags, MouseButton, MouseCursor, Ui};
 use stretch::{
     node::{Node, Stretch},
     result::Layout,
@@ -13,10 +11,7 @@ use stretch::{
     Error,
 };
 
-use crate::{
-    animation::{OneWayEase, VelocityEase},
-    util::Lerp,
-};
+use crate::{animation::OneWayEase, util::Lerp};
 
 pub trait Element<Model> {
     fn set_layout(&mut self, node: Node);

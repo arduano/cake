@@ -23,7 +23,7 @@ impl CakeWindow {
     pub fn new(
         instance: &Instance,
         event_loop: &EventLoop<i32>,
-        model: Arc<Mutex<Box<CakeData>>>,
+        _model: Arc<Mutex<Box<CakeData>>>,
     ) -> Self {
         let version = env!("CARGO_PKG_VERSION");
 

@@ -1,11 +1,11 @@
 use std::{
     collections::{hash_map::Keys, HashMap},
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex},
     time::Instant,
 };
 
 use futures::executor::block_on;
-use imgui::{im_str, Condition, Context, ImColor32, MouseCursor, StyleVar};
+use imgui::{Context};
 use imgui_wgpu::{Renderer, RendererConfig};
 use imgui_winit_support::WinitPlatform;
 use wgpu::{Adapter, Device, Instance, Queue};
@@ -69,7 +69,6 @@ struct OpenDisplayWindow<Model, Ev> {
     window: Box<dyn DisplayWindow<Model, Ev>>,
     imgui: ImGuiDisplayContext,
     last_frame: Instant,
-    is_open: bool,
 }
 
 impl<Model, Ev> OpenDisplayWindow<Model, Ev> {
@@ -98,7 +97,6 @@ impl<Model, Ev> OpenDisplayWindow<Model, Ev> {
             window,
             imgui: ImGuiDisplayContext { platform, renderer },
             last_frame,
-            is_open: true,
         }
     }
 
@@ -156,9 +154,9 @@ impl<Model, Ev> WindowMap<Model, Ev> {
         self.window_map.insert(window.window_id(), window);
     }
 
-    pub fn remove(&mut self, id: &WindowId) {
-        self.window_map.remove(id);
-    }
+    // pub fn remove(&mut self, id: &WindowId) {
+    //     self.window_map.remove(id);
+    // }
 
     pub fn get(&self, id: &WindowId) -> Option<&OpenDisplayWindow<Model, Ev>> {
         self.window_map.get(id)
@@ -176,7 +174,7 @@ impl<Model, Ev> WindowMap<Model, Ev> {
 pub fn run_application<Model, Ev: 'static + Copy + Send>(
     mut graphics: ApplicationGraphics,
     mut event_loop: EventLoop<Ev>,
-    mut model: Arc<Mutex<Box<Model>>>,
+    model: Arc<Mutex<Box<Model>>>,
     main_window: Box<dyn DisplayWindow<Model, Ev>>,
 ) {
     let mut imgui = imgui::Context::create();

@@ -1,7 +1,5 @@
 use std::time::Instant;
 
-use imgui::ImColor32;
-
 use crate::util::Lerp;
 
 pub struct VelocityEase {
