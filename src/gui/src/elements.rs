@@ -153,26 +153,30 @@ impl Ripple {
             col: OneWayEase::new(
                 ImColor32::from_rgba(255, 255, 255, (255.0 * 0.4) as u8),
                 ImColor32::from_rgba(0, 0, 0, 0),
-                0.2,
-                0.2,
+                0.3,
+                0.1,
             ),
-            rad: OneWayEase::new(0.0, 2.0, 0.4, 0.0),
+            rad: OneWayEase::new_started(0.0, 2.0, 0.4, 0.0),
         }
     }
 }
 
-pub struct RectangleRippleButton<Model> {
+pub struct RectangleRippleButton<Model, F: 'static + Fn()> {
     children: Vec<Box<dyn Element<Model>>>,
     background: imgui::ImColor32,
     style: Style,
     ripples: VecDeque<Ripple>,
+    active: bool,
     last_layout: Option<Node>,
+
+    on_click: F,
 }
 
-impl<Model> RectangleRippleButton<Model> {
+impl<Model, F: 'static + Fn()> RectangleRippleButton<Model, F> {
     pub fn new(
         background: imgui::ImColor32,
         style: Style,
+        on_click: F,
         children: Vec<Box<dyn Element<Model>>>,
     ) -> Box<Self> {
         Box::new(RectangleRippleButton {
@@ -180,12 +184,14 @@ impl<Model> RectangleRippleButton<Model> {
             background,
             style,
             ripples: VecDeque::new(),
+            active: false,
             last_layout: None,
+            on_click,
         })
     }
 }
 
-impl<Model> Element<Model> for RectangleRippleButton<Model> {
+impl<Model, F: 'static + Fn()> Element<Model> for RectangleRippleButton<Model, F> {
     fn set_layout(&mut self, node: Node) {
         self.last_layout = Some(node);
     }
@@ -225,20 +231,29 @@ impl<Model> Element<Model> for RectangleRippleButton<Model> {
             }
         });
 
-        // // if ui.is_mouse_hovering_rect(p1, p2) {
-        // if ui.is_mouse_hovering_rect(p1, p2) {
-        //     ui.set_mouse_cursor(Some(MouseCursor::Hand));
-        // }
-
-        if ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_BLOCKED_BY_ACTIVE_ITEM) {
-            ui.set_mouse_cursor(Some(MouseCursor::Hand));
-        }
-
         if ui.is_item_clicked(MouseButton::Left) {
             let pos = ui.io().mouse_pos;
             let x = (pos[0] - p1[0]) / (p2[0] - p1[0]);
             let y = (pos[1] - p1[1]) / (p2[1] - p1[1]);
             self.ripples.push_front(Ripple::new(x, y));
+            self.active = true;
+            (self.on_click)();
+        }
+
+        if ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_BLOCKED_BY_ACTIVE_ITEM) {
+            ui.set_mouse_cursor(Some(MouseCursor::Hand));
+        }
+
+        if !ui.is_mouse_down(MouseButton::Left) {
+            if self.active {
+                match self.ripples.front_mut() {
+                    Some(r) => {
+                        r.col.start();
+                    }
+                    None => {}
+                }
+                self.active = false;
+            }
         }
 
         loop {
@@ -264,7 +279,7 @@ impl<Model> Element<Model> for RectangleRippleButton<Model> {
     }
 }
 
-impl<Model> BasicContainer<Model> for RectangleRippleButton<Model> {
+impl<Model, F: 'static + Fn()> BasicContainer<Model> for RectangleRippleButton<Model, F> {
     fn children(&self) -> &Vec<Box<dyn Element<Model>>> {
         &self.children
     }

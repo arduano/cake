@@ -165,6 +165,7 @@ dependencies = [
  "bytemuck",
  "cake-gui",
  "cake-midi",
+ "cake-util",
  "cgmath",
  "futures",
  "getset",
@@ -212,6 +213,29 @@ dependencies = [
  "color-rs",
  "getset",
  "to_vec",
+]
+
+[[package]]
+name = "cake-util"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "bytemuck",
+ "cake-gui",
+ "cake-midi",
+ "cgmath",
+ "futures",
+ "getset",
+ "image",
+ "imgui",
+ "imgui-wgpu",
+ "imgui-winit-support",
+ "serde",
+ "shaderc",
+ "stretch",
+ "wgpu",
+ "wgpu-subscriber",
+ "winit",
 ]
 
 [[package]]

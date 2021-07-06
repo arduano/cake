@@ -38,7 +38,7 @@ pub trait DisplayWindow<Model, Ev> {
             format: self.swapchain_texture_format(),
             width: size.width as u32,
             height: size.height as u32,
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode: wgpu::PresentMode::Mailbox,
         };
 
         graphics.device().create_swap_chain(surface, &sc_desc)

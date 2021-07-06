@@ -124,28 +124,52 @@ pub struct OneWayEase<T: Lerp> {
     end: T,
     delay: f32,
     fade: f32,
-    start_time: Instant,
+    start_time: Option<Instant>,
 }
 
-impl<T: Lerp> OneWayEase<T> {
+impl<T: Lerp + Copy> OneWayEase<T> {
     pub fn new(start: T, end: T, fade: f32, delay: f32) -> Self {
         OneWayEase {
             start,
             end,
             fade,
             delay,
-            start_time: Instant::now(),
+            start_time: None,
         }
     }
 
+    pub fn new_started(start: T, end: T, fade: f32, delay: f32) -> Self {
+        let mut ease = Self::new(start, end, fade, delay);
+        ease.start();
+        ease
+    }
+
+    pub fn started(&self) -> bool {
+        self.start_time.is_none()
+    }
+
+    pub fn start(&mut self) {
+        self.start_time = Some(Instant::now());
+    }
+
     pub fn value(&self) -> T {
-        let t = self.start_time.elapsed().as_secs_f32() - self.delay;
-        let t = (t / self.fade).clamp(0.0, 1.0);
-        self.start.lerp(&self.end, t)
+        match self.start_time {
+            None => *&self.start,
+            Some(start_time) => {
+                let t = start_time.elapsed().as_secs_f32() - self.delay;
+                let t = (t / self.fade).clamp(0.0, 1.0);
+                self.start.lerp(&self.end, t)
+            }
+        }
     }
 
     pub fn ended(&self) -> bool {
-        let t = self.start_time.elapsed().as_secs_f32() - self.delay;
-        t > self.fade
+        match self.start_time {
+            None => false,
+            Some(start_time) => {
+                let t = start_time.elapsed().as_secs_f32() - self.delay;
+                t > self.fade
+            }
+        }
     }
 }

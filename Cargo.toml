@@ -4,6 +4,7 @@ members = [
     "src/cake",
     "src/gui",
     "src/midi",
+    "src/util",
 ]
 
 [profile.release]

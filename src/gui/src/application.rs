@@ -176,7 +176,7 @@ impl<Model, Ev> WindowMap<Model, Ev> {
 pub fn run_application_default<Model, Ev: 'static + Copy + Send>(
     instance: Instance,
     event_loop: EventLoop<Ev>,
-    model: Box<Model>,
+    model: Arc<Mutex<Box<Model>>>,
     main_window: Box<dyn DisplayWindow<Model, Ev>>,
 ) {
     let window = main_window.window_data();
@@ -188,7 +188,7 @@ pub fn run_application_default<Model, Ev: 'static + Copy + Send>(
 pub fn run_application<Model, Ev: 'static + Copy + Send>(
     mut graphics: ApplicationGraphics,
     mut event_loop: EventLoop<Ev>,
-    mut model: Box<Model>,
+    mut model: Arc<Mutex<Box<Model>>>,
     main_window: Box<dyn DisplayWindow<Model, Ev>>,
 ) {
     let mut imgui = imgui::Context::create();
@@ -199,8 +199,6 @@ pub fn run_application<Model, Ev: 'static + Copy + Send>(
     window_map.insert(main_window, &mut imgui, &graphics);
 
     // let event_pipe = Arc::new(Mutex::new(event_loop.create_proxy()));
-
-    let model = Arc::new(Mutex::new(model));
 
     event_loop.run_return(move |event, _, control_flow| {
         *control_flow = if cfg!(feature = "metal-auto-capture") {

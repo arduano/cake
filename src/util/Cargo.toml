@@ -1,5 +1,5 @@
 [package]
-name = "cake"
+name = "cake-util"
 version = "0.1.0"
 edition = "2018"
 workspace = "../.."
@@ -23,7 +23,6 @@ imgui-winit-support = "0.7"
 wgpu-subscriber = "0.1"
 
 midi = { path = "../midi", package = "cake-midi" }
-util = { path = "../util", package = "cake-util" }
 gui = { path = "../gui", package = "cake-gui" }
 
 [build-dependencies]

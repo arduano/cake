@@ -1,10 +1,12 @@
 use gui::application::{run_application_default, ApplicationGraphics};
 use gui::elements::Element;
 use gui::window::{DisplayWindow, ImGuiDisplayContext, WindowData};
+use gui::{d, rgb, rgba, size, style};
 use imgui::*;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use stretch::number::Number;
+use util::fps::Fps;
 use wgpu::Instance;
 use winit::window::WindowBuilder;
 use winit::{dpi::LogicalSize, event_loop::EventLoop};
@@ -13,15 +15,16 @@ struct CakeData {}
 
 struct CakeWindow {
     window_data: WindowData,
-    root_element: Box<Element<CakeData>>,
-}
-
-enum CakeEvent {
-    E,
+    root_element: Box<dyn Element<CakeData>>,
+    fps: Fps,
 }
 
 impl CakeWindow {
-    pub fn new(instance: &Instance, event_loop: &EventLoop<i32>) -> Self {
+    pub fn new(
+        instance: &Instance,
+        event_loop: &EventLoop<i32>,
+        model: Arc<Mutex<Box<CakeData>>>,
+    ) -> Self {
         let version = env!("CARGO_PKG_VERSION");
 
         let window = WindowBuilder::new()
@@ -35,94 +38,48 @@ impl CakeWindow {
         window.set_title(&format!("Cake {}", version));
 
         let root_element = {
-            use stretch::geometry::Size;
-            use stretch::style::*;
-
             use gui::elements::{RectangleRippleButton, ShapeElement};
 
             ShapeElement::<CakeData>::new(
-                ImColor32::from_rgba(0, 0, 0, 0),
-                Style {
-                    size: Size {
-                        width: Dimension::Percent(1.0),
-                        height: Dimension::Points(50.0),
-                    },
-                    ..Default::default()
-                },
+                rgba!(0, 0, 0, 0),
+                style!(size => size!(100.0, %; 50.0, px)),
                 vec![
-                    RectangleRippleButton::<CakeData>::new(
-                        ImColor32::from_rgba(0, 0, 0, 255),
-                        Style {
-                            size: Size {
-                                width: Dimension::Points(100.0),
-                                height: Dimension::Points(50.0),
-                            },
-                            flex_grow: 0.0,
-                            flex_shrink: 0.0,
-                            ..Default::default()
+                    RectangleRippleButton::new(
+                        rgba!(0, 0, 0, 0),
+                        style!(size => size!(10, %; 100, %), flex_shrink => 0.0),
+                        || {
+                            println!("Clicked!");
                         },
                         vec![],
                     ),
-                    ShapeElement::<CakeData>::new(
-                        ImColor32::from_rgb(255, 0, 0),
-                        Style {
-                            size: Size {
-                                width: Dimension::Percent(0.1),
-                                height: Dimension::Points(50.0),
-                            },
-                            flex_grow: 0.0,
-                            ..Default::default()
-                        },
+                    ShapeElement::new(
+                        rgb!(255, 0, 0),
+                        style!(size => size!(10, %; 100, %), flex_shrink => 0.0),
                         vec![],
                     ),
-                    ShapeElement::<CakeData>::new(
-                        ImColor32::from_rgb(0, 255, 0),
-                        Style {
-                            size: Size {
-                                width: Dimension::Percent(0.1),
-                                height: Dimension::Points(50.0),
-                            },
-                            flex_grow: 0.0,
-                            ..Default::default()
-                        },
+                    ShapeElement::new(
+                        rgb!(0, 255, 0),
+                        style!(size => size!(10, %; 100, %), flex_shrink => 0.0),
                         vec![],
                     ),
-                    ShapeElement::<CakeData>::new(
-                        ImColor32::from_rgb(0, 0, 255),
-                        Style {
-                            size: Size {
-                                width: Dimension::Percent(0.1),
-                                height: Dimension::Points(50.0),
-                            },
-                            flex_grow: 0.0,
-                            ..Default::default()
-                        },
+                    ShapeElement::new(
+                        rgb!(255, 0, 0),
+                        style!(size => size!(10, %; 100, %), flex_shrink => 0.0),
                         vec![],
                     ),
-                    ShapeElement::<CakeData>::new(
-                        ImColor32::from_rgb(255, 0, 255),
-                        Style {
-                            size: Size {
-                                width: Dimension::Points(500.0),
-                                height: Dimension::Points(50.0),
-                            },
-                            flex_grow: 0.0,
-                            flex_shrink: 1.0,
-                            ..Default::default()
-                        },
+                    ShapeElement::new(
+                        rgb!(0, 0, 255),
+                        style!(size => size!(10, %; 100, %), flex_shrink => 0.0),
                         vec![],
                     ),
-                    ShapeElement::<CakeData>::new(
-                        ImColor32::from_rgb(255, 255, 0),
-                        Style {
-                            size: Size {
-                                width: Dimension::Percent(1.0),
-                                height: Dimension::Points(50.0),
-                            },
-                            flex_grow: 0.0,
-                            flex_shrink: 2.0,
-                            ..Default::default()
-                        },
+                    ShapeElement::new(
+                        rgb!(255, 0, 255),
+                        style!(size => size!(500, px; 100, %), flex_shrink => 0.0),
+                        vec![],
+                    ),
+                    ShapeElement::new(
+                        rgb!(255, 255, 0),
+                        style!(size => size!(10, %; 100, %), flex_shrink => 2.0),
                         vec![],
                     ),
                 ],
@@ -132,6 +89,7 @@ impl CakeWindow {
         CakeWindow {
             window_data: WindowData::new(window, instance),
             root_element: root_element,
+            fps: Fps::new(),
         }
     }
 }
@@ -255,6 +213,7 @@ impl DisplayWindow<CakeData, i32> for CakeWindow {
             .build(&ui, || {
                 new_example_size = Some(ui.content_region_avail());
                 ui.text("Hello World!");
+                ui.text(format!("Fps: {}", self.fps.fps()));
                 // if ui.is_window_hovered() {
                 //     ui.set_mouse_cursor(Some(MouseCursor::Hand));
                 // }
@@ -295,6 +254,8 @@ impl DisplayWindow<CakeData, i32> for CakeWindow {
         drop(rpass);
 
         graphics.queue().submit(Some(encoder.finish()));
+
+        self.fps.count_frame();
     }
 }
 
@@ -304,9 +265,9 @@ fn main() {
     let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
     let event_loop = EventLoop::<i32>::with_user_event();
 
-    let main_window = CakeWindow::new(&instance, &event_loop);
-
     let model = CakeData {};
+    let model = Arc::new(Mutex::new(Box::new(model)));
+    let main_window = CakeWindow::new(&instance, &event_loop, model.clone());
 
-    run_application_default(instance, event_loop, Box::new(model), Box::new(main_window));
+    run_application_default(instance, event_loop, model, Box::new(main_window));
 }
