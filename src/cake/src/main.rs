@@ -1,10 +1,10 @@
-use gui::application::{run_application_default, ApplicationGraphics};
+use gui::application::{run_application, ApplicationGraphics};
 use gui::elements::Element;
 use gui::window::{DisplayWindow, ImGuiDisplayContext, WindowData};
 use gui::{d, rgb, rgba, size, style};
 use imgui::*;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use stretch::number::Number;
 use util::fps::Fps;
 use wgpu::Instance;
@@ -269,5 +269,8 @@ fn main() {
     let model = Arc::new(Mutex::new(Box::new(model)));
     let main_window = CakeWindow::new(&instance, &event_loop, model.clone());
 
-    run_application_default(instance, event_loop, model, Box::new(main_window));
+    let window = main_window.window_data();
+    let graphics = ApplicationGraphics::create(instance, &window);
+
+    run_application(graphics, event_loop, model, Box::new(main_window));
 }

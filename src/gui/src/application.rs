@@ -173,18 +173,6 @@ impl<Model, Ev> WindowMap<Model, Ev> {
     }
 }
 
-pub fn run_application_default<Model, Ev: 'static + Copy + Send>(
-    instance: Instance,
-    event_loop: EventLoop<Ev>,
-    model: Arc<Mutex<Box<Model>>>,
-    main_window: Box<dyn DisplayWindow<Model, Ev>>,
-) {
-    let window = main_window.window_data();
-    let graphics = ApplicationGraphics::create(instance, &window);
-
-    run_application(graphics, event_loop, model, main_window);
-}
-
 pub fn run_application<Model, Ev: 'static + Copy + Send>(
     mut graphics: ApplicationGraphics,
     mut event_loop: EventLoop<Ev>,
