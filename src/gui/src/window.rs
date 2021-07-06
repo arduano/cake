@@ -1,4 +1,7 @@
-use std::time::Duration;
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use imgui::Context;
 
@@ -20,7 +23,11 @@ pub trait DisplayWindow<Model, Ev> {
         wgpu::TextureFormat::Bgra8UnormSrgb
     }
 
-    fn create_swapchain(&self, graphics: &ApplicationGraphics, _model: &Model) -> SwapChain {
+    fn create_swapchain(
+        &self,
+        graphics: &ApplicationGraphics,
+        _model: &Arc<Mutex<Box<Model>>>,
+    ) -> SwapChain {
         let data = self.window_data();
         let (window, surface) = (&data.window, &data.surface);
 
@@ -37,7 +44,11 @@ pub trait DisplayWindow<Model, Ev> {
         graphics.device().create_swap_chain(surface, &sc_desc)
     }
 
-    fn create_and_set_swapchain(&mut self, graphics: &ApplicationGraphics, model: &Model) {
+    fn create_and_set_swapchain(
+        &mut self,
+        graphics: &ApplicationGraphics,
+        model: &Arc<Mutex<Box<Model>>>,
+    ) {
         self.window_data_mut().swap_chain = Some(self.create_swapchain(graphics, model));
     }
 
@@ -49,7 +60,7 @@ pub trait DisplayWindow<Model, Ev> {
         &mut self,
         graphics: &mut ApplicationGraphics,
         imgui_context: &mut ImGuiDisplayContext,
-        model: &mut Model,
+        model: &Arc<Mutex<Box<Model>>>,
         imgui: &mut Context,
         delta: Duration,
     );

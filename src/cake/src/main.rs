@@ -2,6 +2,7 @@ use gui::application::{run_application_default, ApplicationGraphics};
 use gui::elements::Element;
 use gui::window::{DisplayWindow, ImGuiDisplayContext, WindowData};
 use imgui::*;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use stretch::number::Number;
 use wgpu::Instance;
@@ -37,10 +38,10 @@ impl CakeWindow {
             use stretch::geometry::Size;
             use stretch::style::*;
 
-            use gui::elements::{ClickableShapeElementTest, ShapeElement};
+            use gui::elements::{RectangleRippleButton, ShapeElement};
 
             ShapeElement::<CakeData>::new(
-                ImColor32::BLACK,
+                ImColor32::from_rgba(0, 0, 0, 0),
                 Style {
                     size: Size {
                         width: Dimension::Percent(1.0),
@@ -49,8 +50,17 @@ impl CakeWindow {
                     ..Default::default()
                 },
                 vec![
-                    ClickableShapeElementTest::<CakeData>::new(
-                        ImColor32::from_rgb(255, 255, 255),
+                    RectangleRippleButton::<CakeData>::new(
+                        ImColor32::from_rgba(0, 0, 0, 255),
+                        Style {
+                            size: Size {
+                                width: Dimension::Points(100.0),
+                                height: Dimension::Points(50.0),
+                            },
+                            flex_grow: 0.0,
+                            flex_shrink: 0.0,
+                            ..Default::default()
+                        },
                         vec![],
                     ),
                     ShapeElement::<CakeData>::new(
@@ -156,7 +166,7 @@ impl DisplayWindow<CakeData, i32> for CakeWindow {
         &mut self,
         graphics: &mut ApplicationGraphics,
         imgui_context: &mut ImGuiDisplayContext,
-        model: &mut CakeData,
+        model: &Arc<Mutex<Box<CakeData>>>,
         imgui: &mut Context,
         delta: Duration,
     ) {
@@ -164,7 +174,7 @@ impl DisplayWindow<CakeData, i32> for CakeWindow {
         let renderer = &mut imgui_context.renderer;
 
         if self.window_data().swap_chain.is_none() {
-            self.create_and_set_swapchain(&graphics, &model);
+            self.create_and_set_swapchain(&graphics, model);
         }
 
         imgui.io_mut().update_delta_time(delta);
@@ -245,9 +255,9 @@ impl DisplayWindow<CakeData, i32> for CakeWindow {
             .build(&ui, || {
                 new_example_size = Some(ui.content_region_avail());
                 ui.text("Hello World!");
-                if ui.is_window_hovered() {
-                    ui.set_mouse_cursor(Some(MouseCursor::Hand));
-                }
+                // if ui.is_window_hovered() {
+                //     ui.set_mouse_cursor(Some(MouseCursor::Hand));
+                // }
                 // imgui::Image::new(example_texture_id, new_example_size.unwrap()).build(&ui);
             });
 

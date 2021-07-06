@@ -110,7 +110,7 @@ impl<Model, Ev> OpenDisplayWindow<Model, Ev> {
         &mut self,
         graphics: &mut ApplicationGraphics,
         imgui: &mut Context,
-        model: &mut Model,
+        model: &Arc<Mutex<Box<Model>>>,
     ) {
         let now = Instant::now();
         let delta = now - self.last_frame;
@@ -200,6 +200,8 @@ pub fn run_application<Model, Ev: 'static + Copy + Send>(
 
     // let event_pipe = Arc::new(Mutex::new(event_loop.create_proxy()));
 
+    let model = Arc::new(Mutex::new(model));
+
     event_loop.run_return(move |event, _, control_flow| {
         *control_flow = if cfg!(feature = "metal-auto-capture") {
             ControlFlow::Exit
@@ -234,7 +236,7 @@ pub fn run_application<Model, Ev: 'static + Copy + Send>(
             Event::RedrawRequested(window_id) => {
                 let window_data = window_map.get_mut(&window_id).unwrap();
 
-                window_data.render(&mut graphics, &mut imgui, &mut model);
+                window_data.render(&mut graphics, &mut imgui, &model);
             }
             _ => (),
         }

@@ -1,5 +1,9 @@
 use std::time::Instant;
 
+use imgui::ImColor32;
+
+use crate::util::Lerp;
+
 pub struct VelocityEase {
     pub duration: f32,
     pub slope: f32,
@@ -42,6 +46,7 @@ impl VelocityEase {
         (1.0 - t) * f32::powf(t, velocity_power - 1.0) * velocity_power
             - f32::powf(t, velocity_power)
     }
+
     fn get_inertial_pos(&self, t: f32) -> f32 {
         (self.get_raw_inertial_pos(1.0 - t) * self.v) * self.vm
     }
@@ -111,5 +116,36 @@ impl VelocityEase {
         self.start = v;
         self.end = v;
         self.v = 0.0;
+    }
+}
+
+pub struct OneWayEase<T: Lerp> {
+    start: T,
+    end: T,
+    delay: f32,
+    fade: f32,
+    start_time: Instant,
+}
+
+impl<T: Lerp> OneWayEase<T> {
+    pub fn new(start: T, end: T, fade: f32, delay: f32) -> Self {
+        OneWayEase {
+            start,
+            end,
+            fade,
+            delay,
+            start_time: Instant::now(),
+        }
+    }
+
+    pub fn value(&self) -> T {
+        let t = self.start_time.elapsed().as_secs_f32() - self.delay;
+        let t = (t / self.fade).clamp(0.0, 1.0);
+        self.start.lerp(&self.end, t)
+    }
+
+    pub fn ended(&self) -> bool {
+        let t = self.start_time.elapsed().as_secs_f32() - self.delay;
+        t > self.fade
     }
 }
