@@ -5,13 +5,11 @@ use std::{
 
 use gui::{
     application::ApplicationGraphics,
-    d,
     elements::Element,
-    rgb, rgba, size, style,
     window::{DisplayWindow, ImGuiDisplayContext, WindowData},
 };
 use imgui::{im_str, Condition, Context, FontSource, StyleVar};
-use model::{CakeModel, CakeViewModel};
+use model::CakeModel;
 use stretch::number::Number;
 use wgpu::Instance;
 use winit::{dpi::LogicalSize, event_loop::EventLoop, window::WindowBuilder};
@@ -25,10 +23,12 @@ pub struct CakeWindow {
     window_data: WindowData,
     main_window_element: MainWindowElement,
     model: Arc<Mutex<CakeModel>>,
+    imgui: ImGuiDisplayContext,
+    graphics: ApplicationGraphics,
 }
 
 impl CakeWindow {
-    pub fn new(instance: &Instance, event_loop: &EventLoop<()>) -> Self {
+    pub fn new(instance: Instance, event_loop: &EventLoop<()>) -> Self {
         let version = env!("CARGO_PKG_VERSION");
 
         let window = WindowBuilder::new()
@@ -41,14 +41,26 @@ impl CakeWindow {
         });
         window.set_title(&format!("Cake {}", version));
 
-        let model = Arc::new(Mutex::new(CakeModel::new()));
+        let window_data = WindowData::new(window, &instance);
+
+        let mut graphics = ApplicationGraphics::create(instance, &window_data);
+
+        let mut imgui =
+            ImGuiDisplayContext::new(&graphics, &window_data, wgpu::TextureFormat::Bgra8UnormSrgb);
+
+        let model = Arc::new(Mutex::new(CakeModel::new(
+            &mut imgui.renderer,
+            &mut graphics,
+        )));
 
         let main_window_element = MainWindowElement::new(&model);
 
         CakeWindow {
-            window_data: WindowData::new(window, instance),
+            window_data,
             main_window_element,
             model,
+            graphics,
+            imgui,
         }
     }
 }
@@ -79,23 +91,16 @@ impl DisplayWindow for CakeWindow {
         &mut self.window_data
     }
 
-    fn render(
-        &mut self,
-        graphics: &mut ApplicationGraphics,
-        imgui_context: &mut ImGuiDisplayContext,
-        imgui: &mut Context,
-        delta: Duration,
-    ) {
-        let platform = &mut imgui_context.platform;
-        let renderer = &mut imgui_context.renderer;
-
+    fn render(&mut self, delta: Duration) {
         if self.window_data().swap_chain.is_none() {
-            self.create_and_set_swapchain(&graphics);
+            self.window_data.create_and_set_swapchain(&self.graphics);
         }
+
+        let imgui = &mut self.imgui.imgui;
 
         imgui.io_mut().update_delta_time(delta);
 
-        let swap_chain = self.window_data().swap_chain.as_ref().unwrap();
+        let swap_chain = self.window_data.swap_chain.as_ref().unwrap();
 
         let frame = match swap_chain.get_current_frame() {
             Ok(frame) => frame,
@@ -106,7 +111,8 @@ impl DisplayWindow for CakeWindow {
         };
 
         {
-            let window = &self.window_data().window;
+            let platform = &mut self.imgui.platform;
+            let window = &self.window_data.window;
             platform
                 .prepare_frame(imgui.io_mut(), &window)
                 .expect("Failed to prepare frame");
@@ -158,7 +164,7 @@ impl DisplayWindow for CakeWindow {
                         },
                     )
                     .expect("Failed to compute layout!");
-                main_window_element.render(&stretch, &ui, view_model);
+                main_window_element.render([0.0, 0.0], &stretch, &ui, view_model);
             });
 
         nopadding.pop(&ui);
@@ -175,12 +181,16 @@ impl DisplayWindow for CakeWindow {
                 // imgui::Image::new(example_texture_id, new_example_size.unwrap()).build(&ui);
             });
 
-        let mut encoder: wgpu::CommandEncoder = graphics
+        let mut encoder: wgpu::CommandEncoder = self
+            .graphics
             .device()
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        let window = &self.window_data().window;
-        platform.prepare_render(&ui, &window);
+        {
+            let platform = &mut self.imgui.platform;
+            let window = &mut self.window_data.window;
+            platform.prepare_render(&ui, &window);
+        }
 
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: None,
@@ -202,14 +212,28 @@ impl DisplayWindow for CakeWindow {
 
         let draw_data = ui.render();
 
-        renderer
-            .render(draw_data, graphics.queue(), graphics.device(), &mut rpass)
-            .expect("Rendering failed");
+        {
+            let renderer = &mut self.imgui.renderer;
+            renderer
+                .render(
+                    draw_data,
+                    self.graphics.queue(),
+                    self.graphics.device(),
+                    &mut rpass,
+                )
+                .expect("Rendering failed");
+        }
 
         drop(rpass);
 
-        graphics.queue().submit(Some(encoder.finish()));
+        self.graphics.queue().submit(Some(encoder.finish()));
 
         view_model.fps.count_frame();
+    }
+
+    fn handle_platform_event(&mut self, event: &winit::event::Event<()>) {
+        self.imgui
+            .platform
+            .handle_event(self.imgui.imgui.io_mut(), &self.window_data.window, event)
     }
 }

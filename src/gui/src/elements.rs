@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use imgui::{im_str, ChildWindow, ImColor32, ItemHoveredFlags, MouseButton, MouseCursor, Ui};
+use imgui::{ChildWindow, ImColor32, ItemHoveredFlags, MouseButton, MouseCursor, Ui};
 use stretch::{
     node::{Node, Stretch},
     result::Layout,
@@ -16,25 +16,19 @@ use crate::{
 pub trait Element<Model> {
     fn layout(&mut self, stretch: &mut Stretch, model: &mut Model) -> Result<Node, Error>;
 
-    fn render(&mut self, stretch: &Stretch, ui: &Ui, model: &mut Model);
+    fn render(&mut self, anchor: [f32; 2], stretch: &Stretch, ui: &Ui, model: &mut Model);
 }
 
 pub struct FlexElement<Model> {
     children: Vec<Box<dyn Element<Model>>>,
-    color: imgui::ImColor32,
     style: Style,
     last_layout: Option<Node>,
 }
 
 impl<Model> FlexElement<Model> {
-    pub fn new(
-        color: imgui::ImColor32,
-        style: Style,
-        children: Vec<Box<dyn Element<Model>>>,
-    ) -> Box<Self> {
+    pub fn new(style: Style, children: Vec<Box<dyn Element<Model>>>) -> Box<Self> {
         Box::new(FlexElement {
             children,
-            color,
             style,
             last_layout: None,
         })
@@ -46,20 +40,17 @@ impl<Model> FlexElement<Model> {
             .expect("Layout computation failed")
     }
 
-    fn render_children(&mut self, stretch: &Stretch, ui: &Ui, model: &mut Model) {
+    fn render_children(&mut self, anchor: [f32; 2], stretch: &Stretch, ui: &Ui, model: &mut Model) {
         for c in self.children.iter_mut() {
-            c.render(stretch, ui, model);
+            c.render(anchor, stretch, ui, model);
         }
     }
 
-    pub fn get_layout_points(&self, stretch: &Stretch) -> [[f32; 2]; 3] {
+    pub fn get_layout_points(&self, anchor: [f32; 2], stretch: &Stretch) -> [[f32; 2]; 3] {
         let layout = self.last_layout(stretch);
 
-        let p1 = [layout.location.x, layout.location.y];
-        let p2 = [
-            layout.location.x + layout.size.width,
-            layout.location.y + layout.size.height,
-        ];
+        let p1 = [layout.location.x + anchor[0], layout.location.y + anchor[1]];
+        let p2 = [p1[0] + layout.size.width, p1[1] + layout.size.height];
         let size = [layout.size.width, layout.size.height];
 
         [p1, p2, size]
@@ -79,14 +70,60 @@ impl<Model> Element<Model> for FlexElement<Model> {
         Ok(node)
     }
 
-    fn render(&mut self, stretch: &Stretch, ui: &Ui, model: &mut Model) {
-        let [p1, p2, _] = self.get_layout_points(stretch);
+    fn render(&mut self, anchor: [f32; 2], stretch: &Stretch, ui: &Ui, model: &mut Model) {
+        self.render_children(anchor, stretch, ui, model);
+    }
+}
+
+pub struct FlexColorElement<Model> {
+    flex: FlexElement<Model>,
+    color: imgui::ImColor32,
+}
+
+impl<Model> FlexColorElement<Model> {
+    pub fn new(
+        color: imgui::ImColor32,
+        style: Style,
+        children: Vec<Box<dyn Element<Model>>>,
+    ) -> Box<Self> {
+        Box::new(FlexColorElement {
+            flex: FlexElement {
+                children,
+                style,
+                last_layout: None,
+            },
+            color,
+        })
+    }
+
+    pub fn render_children(
+        &mut self,
+        anchor: [f32; 2],
+        stretch: &Stretch,
+        ui: &Ui,
+        model: &mut Model,
+    ) {
+        self.flex.render_children(anchor, stretch, ui, model)
+    }
+
+    pub fn get_layout_points(&self, anchor: [f32; 2], stretch: &Stretch) -> [[f32; 2]; 3] {
+        self.flex.get_layout_points(anchor, stretch)
+    }
+}
+
+impl<Model> Element<Model> for FlexColorElement<Model> {
+    fn layout(&mut self, stretch: &mut Stretch, model: &mut Model) -> Result<Node, Error> {
+        self.flex.layout(stretch, model)
+    }
+
+    fn render(&mut self, anchor: [f32; 2], stretch: &Stretch, ui: &Ui, model: &mut Model) {
+        let [p1, p2, _] = self.flex.get_layout_points(anchor, stretch);
         ui.get_window_draw_list()
             .add_rect(p1, p2, self.color)
             .filled(true)
             .build();
 
-        self.render_children(stretch, ui, model);
+        self.flex.render_children(p1, stretch, ui, model);
     }
 }
 
@@ -114,7 +151,7 @@ impl Ripple {
 }
 
 pub struct RippleButton<Model, F: 'static + Fn(&mut Model)> {
-    flex: FlexElement<Model>,
+    flex: FlexColorElement<Model>,
     ripples: VecDeque<Ripple>,
     active: bool,
 
@@ -129,11 +166,15 @@ impl<Model, F: 'static + Fn(&mut Model)> RippleButton<Model, F> {
         children: Vec<Box<dyn Element<Model>>>,
     ) -> Box<Self> {
         Box::new(RippleButton {
-            flex: FlexElement {
-                children,
+            flex: FlexColorElement {
                 color: background,
-                style,
-                last_layout: None,
+                flex: {
+                    FlexElement {
+                        children,
+                        style,
+                        last_layout: None,
+                    }
+                },
             },
             ripples: VecDeque::new(),
             active: false,
@@ -147,10 +188,10 @@ impl<Model, F: 'static + Fn(&mut Model)> Element<Model> for RippleButton<Model, 
         self.flex.layout(stretch, model)
     }
 
-    fn render(&mut self, stretch: &Stretch, ui: &Ui, model: &mut Model) {
-        self.flex.render_children(stretch, ui, model);
+    fn render(&mut self, anchor: [f32; 2], stretch: &Stretch, ui: &Ui, model: &mut Model) {
+        let [p1, p2, size] = self.flex.get_layout_points(anchor, stretch);
 
-        let [p1, p2, size] = self.flex.get_layout_points(stretch);
+        self.flex.render_children(p1, stretch, ui, model);
 
         ui.set_cursor_pos(p1);
 
@@ -248,8 +289,8 @@ impl<Model, FClick: 'static + Fn(&mut Model), FSelected: 'static + Fn(&mut Model
         self.ripple_button.layout(stretch, model)
     }
 
-    fn render(&mut self, stretch: &Stretch, ui: &Ui, model: &mut Model) {
-        let [p1, p2, _] = self.ripple_button.flex.get_layout_points(stretch);
+    fn render(&mut self, anchor: [f32; 2], stretch: &Stretch, ui: &Ui, model: &mut Model) {
+        let [p1, p2, _] = self.ripple_button.flex.get_layout_points(anchor, stretch);
 
         {
             let dl = ui.get_window_draw_list();
@@ -259,6 +300,57 @@ impl<Model, FClick: 'static + Fn(&mut Model), FSelected: 'static + Fn(&mut Model
             }
         }
 
-        self.ripple_button.render(stretch, ui, model);
+        self.ripple_button.render(anchor, stretch, ui, model);
+    }
+}
+
+pub struct FlexImageElement<Model> {
+    flex: FlexElement<Model>,
+    texture: imgui::TextureId,
+}
+
+impl<Model> FlexImageElement<Model> {
+    pub fn new(
+        texture: imgui::TextureId,
+        style: Style,
+        children: Vec<Box<dyn Element<Model>>>,
+    ) -> Box<Self> {
+        Box::new(FlexImageElement {
+            flex: FlexElement {
+                children,
+                style,
+                last_layout: None,
+            },
+            texture,
+        })
+    }
+
+    pub fn render_children(
+        &mut self,
+        anchor: [f32; 2],
+        stretch: &Stretch,
+        ui: &Ui,
+        model: &mut Model,
+    ) {
+        self.flex.render_children(anchor, stretch, ui, model)
+    }
+
+    pub fn get_layout_points(&self, anchor: [f32; 2], stretch: &Stretch) -> [[f32; 2]; 3] {
+        self.flex.get_layout_points(anchor, stretch)
+    }
+}
+
+impl<Model> Element<Model> for FlexImageElement<Model> {
+    fn layout(&mut self, stretch: &mut Stretch, model: &mut Model) -> Result<Node, Error> {
+        self.flex.layout(stretch, model)
+    }
+
+    fn render(&mut self, anchor: [f32; 2], stretch: &Stretch, ui: &Ui, model: &mut Model) {
+        let [p1, _, size] = self.flex.get_layout_points(anchor, stretch);
+
+        ui.set_cursor_pos(p1);
+        imgui::Image::new(self.texture, size).build(&ui);
+
+        self.flex.render_children(p1, stretch, ui, model);
     }
 }

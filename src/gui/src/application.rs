@@ -1,22 +1,14 @@
-use std::{
-    collections::{hash_map::Keys, HashMap},
-    sync::Arc,
-    time::Instant,
-};
+use std::{sync::Arc, time::Instant};
 
 use futures::executor::block_on;
-use imgui::Context;
-use imgui_wgpu::{Renderer, RendererConfig};
-use imgui_winit_support::WinitPlatform;
 use wgpu::{Adapter, Device, Instance, Queue};
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     platform::run_return::EventLoopExtRunReturn,
-    window::WindowId,
 };
 
-use crate::window::{DisplayWindow, ImGuiDisplayContext, WindowData};
+use crate::window::{DisplayWindow, WindowData};
 
 pub struct ApplicationGraphics {
     adapter: Adapter,
@@ -65,119 +57,11 @@ impl ApplicationGraphics {
     }
 }
 
-struct OpenDisplayWindow {
-    window: Box<dyn DisplayWindow>,
-    imgui: ImGuiDisplayContext,
-    last_frame: Instant,
-}
-
-impl OpenDisplayWindow {
-    pub fn new(
-        window: Box<dyn DisplayWindow>,
-        imgui: &mut Context,
-        graphics: &ApplicationGraphics,
-    ) -> Self {
-        let mut platform = WinitPlatform::init(imgui);
-        platform.attach_window(
-            imgui.io_mut(),
-            &window.window_data().window,
-            imgui_winit_support::HiDpiMode::Default,
-        );
-
-        let renderer_config = RendererConfig {
-            texture_format: window.swapchain_texture_format(),
-            ..Default::default()
-        };
-
-        let renderer = Renderer::new(imgui, graphics.device(), graphics.queue(), renderer_config);
-
-        let last_frame = Instant::now();
-
-        OpenDisplayWindow {
-            window,
-            imgui: ImGuiDisplayContext { platform, renderer },
-            last_frame,
-        }
-    }
-
-    pub fn window_id(&self) -> WindowId {
-        self.window.window_data().window.id()
-    }
-
-    pub fn render(&mut self, graphics: &mut ApplicationGraphics, imgui: &mut Context) {
-        let now = Instant::now();
-        let delta = now - self.last_frame;
-        self.last_frame = now;
-
-        let imgui_context = &mut self.imgui;
-
-        self.window.render(graphics, imgui_context, imgui, delta);
-    }
-
-    pub fn handle_platform_event(&mut self, imgui: &mut Context, event: &Event<()>) {
-        let imgui_context = &mut self.imgui;
-        let platform = &mut imgui_context.platform;
-
-        let window = &self.window;
-        let inner_window_data = window.window_data();
-
-        let window = &inner_window_data.window;
-
-        platform.handle_event(imgui.io_mut(), &window, event);
-    }
-}
-
-struct WindowMap {
-    window_map: HashMap<WindowId, OpenDisplayWindow>,
-}
-
-impl WindowMap {
-    pub fn new() -> Self {
-        WindowMap {
-            window_map: HashMap::<WindowId, OpenDisplayWindow>::new(),
-        }
-    }
-
-    pub fn insert(
-        &mut self,
-        window: Box<dyn DisplayWindow>,
-        imgui: &mut Context,
-        graphics: &ApplicationGraphics,
-    ) {
-        let window = OpenDisplayWindow::new(window, imgui, graphics);
-        self.window_map.insert(window.window_id(), window);
-    }
-
-    // pub fn remove(&mut self, id: &WindowId) {
-    //     self.window_map.remove(id);
-    // }
-
-    pub fn get(&self, id: &WindowId) -> Option<&OpenDisplayWindow> {
-        self.window_map.get(id)
-    }
-
-    pub fn get_mut(&mut self, id: &WindowId) -> Option<&mut OpenDisplayWindow> {
-        self.window_map.get_mut(id)
-    }
-
-    pub fn keys(&self) -> Keys<WindowId, OpenDisplayWindow> {
-        self.window_map.keys()
-    }
-}
-
 pub fn run_application<W: 'static + DisplayWindow>(
-    mut graphics: ApplicationGraphics,
     mut event_loop: EventLoop<()>,
-    main_window: W,
+    mut main_window: W,
 ) {
-    let mut imgui = imgui::Context::create();
-    imgui.set_ini_filename(None);
-
-    let mut window_map = WindowMap::new();
-
-    window_map.insert(Box::new(main_window), &mut imgui, &graphics);
-
-    // let event_pipe = Arc::new(Mutex::new(event_loop.create_proxy()));
+    let mut last_frame = Instant::now();
 
     event_loop.run_return(move |event, _, control_flow| {
         *control_flow = if cfg!(feature = "metal-auto-capture") {
@@ -187,17 +71,10 @@ pub fn run_application<W: 'static + DisplayWindow>(
         };
 
         match event {
-            Event::UserEvent(_) => {
-                println!("User event fired!");
-            }
             Event::WindowEvent {
                 event: WindowEvent::Resized(_),
-                window_id,
-            } => {
-                let window_data = window_map.get_mut(&window_id).unwrap();
-
-                window_data.window.reset_swapchain()
-            }
+                ..
+            } => main_window.reset_swapchain(),
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
@@ -205,24 +82,19 @@ pub fn run_application<W: 'static + DisplayWindow>(
                 *control_flow = ControlFlow::Exit;
             }
             Event::MainEventsCleared => {
-                for id in window_map.keys() {
-                    let window = window_map.get(&id).unwrap();
-                    window.window.window_data().window.request_redraw();
-                }
+                main_window.window_data().window.request_redraw();
             }
-            Event::RedrawRequested(window_id) => {
-                let window_data = window_map.get_mut(&window_id).unwrap();
-
-                window_data.render(&mut graphics, &mut imgui);
+            Event::RedrawRequested(_) => {
+                let curr_frame = Instant::now();
+                main_window.render(last_frame.elapsed());
+                last_frame = curr_frame;
             }
             _ => (),
         }
 
         match event {
-            Event::WindowEvent { window_id, .. } => {
-                let window_data = &mut window_map.get_mut(&window_id).unwrap();
-
-                window_data.handle_platform_event(&mut imgui, &event);
+            Event::WindowEvent { .. } => {
+                main_window.handle_platform_event(&event);
             }
             _ => {}
         }

@@ -15,12 +15,16 @@ pub struct MainWindowElement {
 
 impl MainWindowElement {
     pub fn new(model: &Arc<Mutex<CakeModel>>) -> Self {
-        use gui::{d, elements::FlexElement, rgb, rgba, size, style};
+        use gui::{
+            d,
+            elements::{FlexColorElement, FlexElement},
+            rgb, rgba, size, style,
+        };
         use stretch::style::{AlignItems, FlexDirection};
 
         let model = model.clone();
 
-        let flex = FlexElement::new(
+        let flex = FlexColorElement::new(
             rgba!(0, 0, 0, 0),
             style!(size => size!(100, %; 100, %), flex_direction => FlexDirection::Column, align_items => AlignItems::Stretch),
             vec![MainWindowHeader::new(&model)],
@@ -39,7 +43,7 @@ impl Element<CakeViewModel> for MainWindowElement {
         self.flex.layout(stretch, model)
     }
 
-    fn render(&mut self, stretch: &stretch::Stretch, ui: &imgui::Ui, model: &mut CakeViewModel) {
-        self.flex.render(stretch, ui, model)
+    fn render(&mut self, anchor: [f32; 2], stretch: &stretch::Stretch, ui: &imgui::Ui, model: &mut CakeViewModel) {
+        self.flex.render(anchor, stretch, ui, model)
     }
 }

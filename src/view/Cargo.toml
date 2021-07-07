@@ -10,6 +10,7 @@ wgpu = "0.8.1"
 imgui = "0.7"
 imgui-wgpu = "0.15.1"
 stretch = "0.3.2"
+image = "0.23.14"
 
 midi = { path = "../midi", package = "cake-midi" }
 util = { path = "../util", package = "cake-util" }

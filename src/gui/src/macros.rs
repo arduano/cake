@@ -14,6 +14,34 @@ macro_rules! d {
     };
 }
 
+#[macro_export]
+macro_rules! rect {
+    ( $all:expr ) => {
+        stretch::geometry::Rect {
+            top: $all,
+            bottom: $all,
+            start: $all,
+            end: $all,
+        }
+    };
+    ( $vert:expr, $hor:expr ) => {
+        stretch::geometry::Rect {
+            top: $vert,
+            bottom: $vert,
+            start: $hor,
+            end: $hor,
+        }
+    };
+    ( $top:expr, $right:expr, $bottom:expr, $left:expr,  ) => {
+        stretch::geometry::Rect {
+            top: $top,
+            bottom: $bottom,
+            start: $left,
+            end: $right,
+        }
+    };
+}
+
 // I'm not sure how to make this cleaner
 #[macro_export]
 macro_rules! size {

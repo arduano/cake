@@ -13,46 +13,57 @@ impl MainWindowHeader {
     pub fn new(model: &Arc<Mutex<CakeModel>>) -> Box<Self> {
         use gui::{
             d,
-            elements::{FlexElement, RippleButton, ToggleButton},
-            rgb, rgba, size, style,
+            elements::{
+                FlexColorElement, FlexElement, FlexImageElement, RippleButton, ToggleButton,
+            },
+            rect, rgb, rgba, size, style,
         };
-        use stretch::style::{AlignItems, FlexDirection};
+        use stretch::geometry::Rect;
+        use stretch::style::{AlignItems, FlexDirection, JustifyContent};
 
-        let model = model.clone();
-
-        let flex = FlexElement::new(
+        let model = model.lock().unwrap();
+        let textures = &model.view.textures;
+        let flex = FlexColorElement::new(
             rgba!(0, 0, 0, 0),
             style!(size => size!(100, %; 100, px), flex_direction => FlexDirection::Column, align_items => AlignItems::Stretch),
             vec![
                 // Row 1
-                FlexElement::new(
+                FlexColorElement::new(
                     rgba!(0, 0, 0, 70),
                     style!(size => size!(100, %; auto)),
                     vec![
                         ToggleButton::new(
                             rgba!(0, 0, 0, 0),
                             rgba!(255, 255, 255, 100),
-                            style!(size => size!(40, px; 40, px)),
+                            style!(size => size!(40, px; 40, px), padding => rect!(d!(5, px))),
                             move |model: &mut CakeViewModel| -> bool { model.paused },
                             move |model: &mut CakeViewModel| {
                                 model.paused = true;
                             },
-                            vec![],
+                            vec![FlexImageElement::new(
+                                textures.pause_button,
+                                style!(size => size!(100, %; 100, %)),
+                                vec![],
+                            )],
                         ),
                         ToggleButton::new(
                             rgba!(0, 0, 0, 0),
                             rgba!(255, 255, 255, 100),
-                            style!(size => size!(40, px; 40, px)),
+                            style!(size => size!(40, px; 40, px), padding => rect!(d!(5, px))),
                             move |model: &mut CakeViewModel| -> bool { !model.paused },
                             move |model: &mut CakeViewModel| {
                                 model.paused = false;
                             },
-                            vec![],
+                            vec![FlexImageElement::new(
+                                textures.play_button,
+                                style!(size => size!(100, %; 100, %)),
+                                vec![],
+                            )],
                         ),
                     ],
                 ),
                 // Row 2
-                FlexElement::new(
+                FlexColorElement::new(
                     rgba!(0, 0, 0, 0),
                     style!(size => size!(100, %; auto)),
                     vec![],
@@ -73,7 +84,13 @@ impl Element<CakeViewModel> for MainWindowHeader {
         self.flex.layout(stretch, model)
     }
 
-    fn render(&mut self, stretch: &stretch::Stretch, ui: &imgui::Ui, model: &mut CakeViewModel) {
-        self.flex.render(stretch, ui, model)
+    fn render(
+        &mut self,
+        anchor: [f32; 2],
+        stretch: &stretch::Stretch,
+        ui: &imgui::Ui,
+        model: &mut CakeViewModel,
+    ) {
+        self.flex.render(anchor, stretch, ui, model)
     }
 }

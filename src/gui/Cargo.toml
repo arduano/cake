@@ -13,3 +13,4 @@ stretch = "0.3.2"
 
 futures = "0.3"
 imgui-winit-support = "0.7"
+image = "0.23.14"
