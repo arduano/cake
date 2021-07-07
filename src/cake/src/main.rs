@@ -38,9 +38,9 @@ impl CakeWindow {
         window.set_title(&format!("Cake {}", version));
 
         let root_element = {
-            use gui::elements::{RectangleRippleButton, ShapeElement};
+            use gui::elements::{RectangleRippleButton, FlexElement};
 
-            ShapeElement::<CakeData>::new(
+            FlexElement::<CakeData>::new(
                 rgba!(0, 0, 0, 0),
                 style!(size => size!(100.0, %; 50.0, px)),
                 vec![
@@ -52,32 +52,32 @@ impl CakeWindow {
                         },
                         vec![],
                     ),
-                    ShapeElement::new(
+                    FlexElement::new(
                         rgb!(255, 0, 0),
                         style!(size => size!(10, %; 100, %), flex_shrink => 0.0),
                         vec![],
                     ),
-                    ShapeElement::new(
+                    FlexElement::new(
                         rgb!(0, 255, 0),
                         style!(size => size!(10, %; 100, %), flex_shrink => 0.0),
                         vec![],
                     ),
-                    ShapeElement::new(
+                    FlexElement::new(
                         rgb!(255, 0, 0),
                         style!(size => size!(10, %; 100, %), flex_shrink => 0.0),
                         vec![],
                     ),
-                    ShapeElement::new(
+                    FlexElement::new(
                         rgb!(0, 0, 255),
                         style!(size => size!(10, %; 100, %), flex_shrink => 0.0),
                         vec![],
                     ),
-                    ShapeElement::new(
+                    FlexElement::new(
                         rgb!(255, 0, 255),
                         style!(size => size!(500, px; 100, %), flex_shrink => 0.0),
                         vec![],
                     ),
-                    ShapeElement::new(
+                    FlexElement::new(
                         rgb!(255, 255, 0),
                         style!(size => size!(10, %; 100, %), flex_shrink => 2.0),
                         vec![],

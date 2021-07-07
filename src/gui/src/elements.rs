@@ -14,84 +14,51 @@ use stretch::{
 use crate::{animation::OneWayEase, util::Lerp};
 
 pub trait Element<Model> {
-    fn set_layout(&mut self, node: Node);
-    fn get_layout(&self) -> Option<Node>;
-    fn last_layout<'a>(&self, stretch: &'a Stretch) -> &'a Layout {
-        stretch
-            .layout(self.get_layout().unwrap())
-            .expect("Layout computation failed")
-    }
-
     fn layout(
         &mut self,
         stretch: &mut Stretch,
         model: &Arc<Mutex<Box<Model>>>,
-    ) -> Result<Node, Error> {
-        let node = self.compute_layout(stretch, model)?;
-        self.set_layout(node);
-
-        Ok(node)
-    }
-
-    fn compute_layout(
-        &mut self,
-        stretch: &mut Stretch,
-        model: &Arc<Mutex<Box<Model>>>,
     ) -> Result<Node, Error>;
+
     fn render(&mut self, stretch: &Stretch, ui: &Ui, model: &Arc<Mutex<Box<Model>>>);
 }
 
-pub trait BasicContainer<Model>: Element<Model> {
-    fn children(&self) -> &Vec<Box<dyn Element<Model>>>;
-    fn children_mut(&mut self) -> &mut Vec<Box<dyn Element<Model>>>;
-    fn style(&self) -> Style;
-
-    fn compute_layout_base(
-        &mut self,
-        stretch: &mut Stretch,
-        model: &Arc<Mutex<Box<Model>>>,
-    ) -> Result<Node, Error> {
-        let mut children = Vec::new();
-        for c in self.children_mut().iter_mut() {
-            children.push(c.layout(stretch, model)?);
-        }
-
-        let node = stretch.new_node(self.style(), children);
-
-        node
-    }
-
-    fn render_children(&mut self, stretch: &Stretch, ui: &Ui, model: &Arc<Mutex<Box<Model>>>) {
-        for c in self.children_mut().iter_mut() {
-            c.render(stretch, ui, model);
-        }
-    }
-}
-
-pub struct ShapeElement<Model> {
+pub struct FlexElement<Model> {
     children: Vec<Box<dyn Element<Model>>>,
     color: imgui::ImColor32,
     style: Style,
     last_layout: Option<Node>,
 }
 
-impl<Model> ShapeElement<Model> {
+impl<Model> FlexElement<Model> {
     pub fn new(
         color: imgui::ImColor32,
         style: Style,
         children: Vec<Box<dyn Element<Model>>>,
     ) -> Box<Self> {
-        Box::new(ShapeElement {
+        Box::new(FlexElement {
             children,
             color,
             style,
             last_layout: None,
         })
     }
+
+    fn last_layout<'a>(&self, stretch: &'a Stretch) -> &'a Layout {
+        stretch
+            .layout(self.last_layout.unwrap())
+            .expect("Layout computation failed")
+    }
+
+    fn render_children(&mut self, stretch: &Stretch, ui: &Ui, model: &Arc<Mutex<Box<Model>>>) {
+        for c in self.children.iter_mut() {
+            c.render(stretch, ui, model);
+        }
+    }
 }
 
-impl<Model> Element<Model> for ShapeElement<Model> {
-    fn compute_layout(
+impl<Model> Element<Model> for FlexElement<Model> {
+    fn layout(
         &mut self,
         stretch: &mut Stretch,
         model: &Arc<Mutex<Box<Model>>>,
@@ -100,9 +67,11 @@ impl<Model> Element<Model> for ShapeElement<Model> {
         for c in self.children.iter_mut() {
             children.push(c.layout(stretch, model)?);
         }
-        let node = stretch.new_node(self.style, children);
+        let node = stretch.new_node(self.style, children)?;
 
-        node
+        self.last_layout = Some(node);
+
+        Ok(node)
     }
 
     fn render(&mut self, stretch: &Stretch, ui: &Ui, model: &Arc<Mutex<Box<Model>>>) {
@@ -119,17 +88,7 @@ impl<Model> Element<Model> for ShapeElement<Model> {
             .filled(true)
             .build();
 
-        for c in self.children.iter_mut() {
-            c.render(stretch, ui, model);
-        }
-    }
-
-    fn set_layout(&mut self, node: Node) {
-        self.last_layout = Some(node);
-    }
-
-    fn get_layout(&self) -> Option<Node> {
-        self.last_layout
+        self.render_children(stretch, ui, model);
     }
 }
 
@@ -157,12 +116,9 @@ impl Ripple {
 }
 
 pub struct RectangleRippleButton<Model, F: 'static + Fn()> {
-    children: Vec<Box<dyn Element<Model>>>,
-    background: imgui::ImColor32,
-    style: Style,
+    flex: FlexElement<Model>,
     ripples: VecDeque<Ripple>,
     active: bool,
-    last_layout: Option<Node>,
 
     on_click: F,
 }
@@ -175,30 +131,32 @@ impl<Model, F: 'static + Fn()> RectangleRippleButton<Model, F> {
         children: Vec<Box<dyn Element<Model>>>,
     ) -> Box<Self> {
         Box::new(RectangleRippleButton {
-            children,
-            background,
-            style,
+            flex: FlexElement {
+                children,
+                color: background,
+                style,
+                last_layout: None,
+            },
             ripples: VecDeque::new(),
             active: false,
-            last_layout: None,
             on_click,
         })
     }
 }
 
 impl<Model, F: 'static + Fn()> Element<Model> for RectangleRippleButton<Model, F> {
-    fn set_layout(&mut self, node: Node) {
-        self.last_layout = Some(node);
-    }
-
-    fn get_layout(&self) -> Option<Node> {
-        self.last_layout
+    fn layout(
+        &mut self,
+        stretch: &mut Stretch,
+        model: &Arc<Mutex<Box<Model>>>,
+    ) -> Result<Node, Error> {
+        self.flex.layout(stretch, model)
     }
 
     fn render(&mut self, stretch: &Stretch, ui: &Ui, model: &Arc<Mutex<Box<Model>>>) {
-        let layout = self.last_layout(stretch);
+        let layout = self.flex.last_layout(stretch);
 
-        self.render_children(stretch, ui, model);
+        self.flex.render_children(stretch, ui, model);
 
         let p1 = [layout.location.x, layout.location.y];
         let p2 = [
@@ -213,7 +171,7 @@ impl<Model, F: 'static + Fn()> Element<Model> for RectangleRippleButton<Model, F
         ChildWindow::new(id).size(p2).build(ui, || {
             let dl = ui.get_window_draw_list();
 
-            dl.add_rect(p1, p2, self.background).filled(true).build();
+            dl.add_rect(p1, p2, self.flex.color).filled(true).build();
 
             for r in self.ripples.iter() {
                 dl.add_circle(
@@ -263,27 +221,5 @@ impl<Model, F: 'static + Fn()> Element<Model> for RectangleRippleButton<Model, F
                 }
             }
         }
-    }
-
-    fn compute_layout(
-        &mut self,
-        stretch: &mut Stretch,
-        model: &Arc<Mutex<Box<Model>>>,
-    ) -> Result<Node, Error> {
-        self.compute_layout_base(stretch, model)
-    }
-}
-
-impl<Model, F: 'static + Fn()> BasicContainer<Model> for RectangleRippleButton<Model, F> {
-    fn children(&self) -> &Vec<Box<dyn Element<Model>>> {
-        &self.children
-    }
-
-    fn children_mut(&mut self) -> &mut Vec<Box<dyn Element<Model>>> {
-        &mut self.children
-    }
-
-    fn style(&self) -> Style {
-        self.style
     }
 }
