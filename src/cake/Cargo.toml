@@ -10,14 +10,12 @@ shaderc = "0.7.2"
 image = "0.23.14"
 serde = { version = "1.0.126", features = ["derive"] }
 winit = "0.24"
-getset = "0.1.1"
 wgpu = "0.8.1"
 imgui = "0.7"
 imgui-wgpu = "0.15.1"
 stretch = "0.3.2"
 
 bytemuck = { version = "1.4", features = ["derive"] }
-cgmath = "0.18"
 futures = "0.3"
 imgui-winit-support = "0.7"
 wgpu-subscriber = "0.1"

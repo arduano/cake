@@ -175,7 +175,7 @@ impl<Model, F: 'static + Fn()> Element<Model> for RectangleRippleButton<Model, F
 
             for r in self.ripples.iter() {
                 dl.add_circle(
-                    [p1[0].lerp(&p2[0], r.x), p1[1].lerp(&p2[1], r.y)],
+                    [p1[0].lerpv(p2[0], r.x), p1[1].lerpv(p2[1], r.y)],
                     r.rad.value() * (p2[0] - p1[0]) * 2.0,
                     r.col.value(),
                 )

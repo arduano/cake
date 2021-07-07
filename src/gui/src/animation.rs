@@ -156,7 +156,7 @@ impl<T: Lerp + Copy> OneWayEase<T> {
             Some(start_time) => {
                 let t = start_time.elapsed().as_secs_f32() - self.delay;
                 let t = (t / self.fade).clamp(0.0, 1.0);
-                self.start.lerp(&self.end, t)
+                self.start.lerpv(self.end, t)
             }
         }
     }
