@@ -1,3 +1,8 @@
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Mutex,
+};
+
 use imgui::ImColor32;
 
 pub trait Lerp {
@@ -27,4 +32,10 @@ impl Lerp for ImColor32 {
             self.a.lerpv(to.a, t),
         )
     }
+}
+
+static IMGUI_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
+pub fn rand_im_id() -> imgui::Id<'static> {
+    let val = IMGUI_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+    imgui::Id::Int(val as i32)
 }

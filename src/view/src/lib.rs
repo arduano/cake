@@ -16,11 +16,14 @@ use stretch::number::Number;
 use wgpu::Instance;
 use winit::{dpi::LogicalSize, event_loop::EventLoop, window::WindowBuilder};
 
+use crate::windows::main::MainWindowElement;
+
 mod model;
+mod windows;
 
 pub struct CakeWindow {
     window_data: WindowData,
-    root_element: Box<dyn Element<CakeViewModel>>,
+    main_window_element: MainWindowElement,
     model: Arc<Mutex<CakeModel>>,
 }
 
@@ -38,59 +41,14 @@ impl CakeWindow {
         });
         window.set_title(&format!("Cake {}", version));
 
-        let root_element = {
-            use gui::elements::{FlexElement, RectangleRippleButton};
+        let model = Arc::new(Mutex::new(CakeModel::new()));
 
-            FlexElement::<CakeViewModel>::new(
-                rgba!(0, 0, 0, 0),
-                style!(size => size!(100.0, %; 50.0, px)),
-                vec![
-                    RectangleRippleButton::new(
-                        rgba!(0, 0, 0, 0),
-                        style!(size => size!(10, %; 100, %), flex_shrink => 0.0),
-                        || {
-                            println!("Clicked!");
-                        },
-                        vec![],
-                    ),
-                    FlexElement::new(
-                        rgb!(255, 0, 0),
-                        style!(size => size!(10, %; 100, %), flex_shrink => 0.0),
-                        vec![],
-                    ),
-                    FlexElement::new(
-                        rgb!(0, 255, 0),
-                        style!(size => size!(10, %; 100, %), flex_shrink => 0.0),
-                        vec![],
-                    ),
-                    FlexElement::new(
-                        rgb!(255, 0, 0),
-                        style!(size => size!(10, %; 100, %), flex_shrink => 0.0),
-                        vec![],
-                    ),
-                    FlexElement::new(
-                        rgb!(0, 0, 255),
-                        style!(size => size!(10, %; 100, %), flex_shrink => 0.0),
-                        vec![],
-                    ),
-                    FlexElement::new(
-                        rgb!(255, 0, 255),
-                        style!(size => size!(500, px; 100, %), flex_shrink => 0.0),
-                        vec![],
-                    ),
-                    FlexElement::new(
-                        rgb!(255, 255, 0),
-                        style!(size => size!(10, %; 100, %), flex_shrink => 2.0),
-                        vec![],
-                    ),
-                ],
-            )
-        };
+        let main_window_element = MainWindowElement::new(&model);
 
         CakeWindow {
             window_data: WindowData::new(window, instance),
-            root_element: root_element,
-            model: Arc::new(Mutex::new(CakeModel::new())),
+            main_window_element,
+            model,
         }
     }
 }
@@ -168,7 +126,7 @@ impl DisplayWindow for CakeWindow {
         ]);
 
         let mut model_locked = self.model.lock().unwrap();
-        let root_element = &mut self.root_element;
+        let main_window_element = &mut self.main_window_element;
 
         let view_model = &mut model_locked.view;
 
@@ -186,14 +144,8 @@ impl DisplayWindow for CakeWindow {
             .size(size, Condition::Always)
             .position([0.0, 0.0], Condition::Always)
             .build(&ui, || {
-                new_example_size = Some(ui.content_region_avail());
-                // imgui::Image::new(example_texture_id, new_example_size.unwrap()).build(&ui);
-                // ui.get_window_draw_list()
-                //     .add_rect([0.0, 0.0], [100.0, 100.0], ImColor32::BLACK)
-                //     .filled(true)
-                //     .build();
                 let mut stretch = stretch::node::Stretch::new();
-                let node = root_element
+                let node = main_window_element
                     .layout(&mut stretch, view_model)
                     .expect("Failed to retreive layout!");
                 let window_size = ui.window_size();
@@ -206,8 +158,7 @@ impl DisplayWindow for CakeWindow {
                         },
                     )
                     .expect("Failed to compute layout!");
-
-                root_element.render(&stretch, &ui, view_model);
+                main_window_element.render(&stretch, &ui, view_model);
             });
 
         nopadding.pop(&ui);

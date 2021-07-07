@@ -6,6 +6,12 @@ macro_rules! d {
     ( $x:expr, % ) => {
         stretch::style::Dimension::Percent(($x as f32) / 100.0)
     };
+    ( auto ) => {
+        stretch::style::Dimension::Auto
+    };
+    ( undef ) => {
+        stretch::style::Dimension::Undefined
+    };
 }
 
 // I'm not sure how to make this cleaner
@@ -33,6 +39,38 @@ macro_rules! size {
         stretch::geometry::Size {
             width: d!($x, px),
             height: d!($y, px),
+        }
+    };
+
+    ( $x:expr, %; $y:ident ) => {
+        stretch::geometry::Size {
+            width: d!($x, %),
+            height: d!($y),
+        }
+    };
+    ( $x:expr, px; $y:ident ) => {
+        stretch::geometry::Size {
+            width: d!($x, px),
+            height: d!($y),
+        }
+    };
+    ( $x:ident; $y:expr, px ) => {
+        stretch::geometry::Size {
+            width: d!($x),
+            height: d!($y, px),
+        }
+    };
+    ( $x:ident; $y:expr, % ) => {
+        stretch::geometry::Size {
+            width: d!($x),
+            height: d!($y, %),
+        }
+    };
+
+    ( $x:ident; $y:ident ) => {
+        stretch::geometry::Size {
+            width: d!($x),
+            height: d!($y),
         }
     };
 }

@@ -1,15 +1,23 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
 
 use backend::CakeBackendModel;
 use util::fps::Fps;
 
 pub struct CakeViewModel {
     pub fps: Fps,
+    pub paused: bool,
 }
 
 impl CakeViewModel {
     pub fn new() -> Self {
-        CakeViewModel { fps: Fps::new() }
+        CakeViewModel {
+            fps: Fps::new(),
+            paused: true,
+        }
     }
 }
 

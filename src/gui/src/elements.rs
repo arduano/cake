@@ -8,7 +8,10 @@ use stretch::{
     Error,
 };
 
-use crate::{animation::OneWayEase, util::Lerp};
+use crate::{
+    animation::OneWayEase,
+    util::{rand_im_id, Lerp},
+};
 
 pub trait Element<Model> {
     fn layout(&mut self, stretch: &mut Stretch, model: &mut Model) -> Result<Node, Error>;
@@ -48,6 +51,19 @@ impl<Model> FlexElement<Model> {
             c.render(stretch, ui, model);
         }
     }
+
+    pub fn get_layout_points(&self, stretch: &Stretch) -> [[f32; 2]; 3] {
+        let layout = self.last_layout(stretch);
+
+        let p1 = [layout.location.x, layout.location.y];
+        let p2 = [
+            layout.location.x + layout.size.width,
+            layout.location.y + layout.size.height,
+        ];
+        let size = [layout.size.width, layout.size.height];
+
+        [p1, p2, size]
+    }
 }
 
 impl<Model> Element<Model> for FlexElement<Model> {
@@ -64,16 +80,9 @@ impl<Model> Element<Model> for FlexElement<Model> {
     }
 
     fn render(&mut self, stretch: &Stretch, ui: &Ui, model: &mut Model) {
-        let layout = self.last_layout(stretch);
+        let [p1, p2, _] = self.get_layout_points(stretch);
         ui.get_window_draw_list()
-            .add_rect(
-                [layout.location.x, layout.location.y],
-                [
-                    layout.location.x + layout.size.width,
-                    layout.location.y + layout.size.height,
-                ],
-                self.color,
-            )
+            .add_rect(p1, p2, self.color)
             .filled(true)
             .build();
 
@@ -104,7 +113,7 @@ impl Ripple {
     }
 }
 
-pub struct RectangleRippleButton<Model, F: 'static + Fn()> {
+pub struct RippleButton<Model, F: 'static + Fn(&mut Model)> {
     flex: FlexElement<Model>,
     ripples: VecDeque<Ripple>,
     active: bool,
@@ -112,14 +121,14 @@ pub struct RectangleRippleButton<Model, F: 'static + Fn()> {
     on_click: F,
 }
 
-impl<Model, F: 'static + Fn()> RectangleRippleButton<Model, F> {
+impl<Model, F: 'static + Fn(&mut Model)> RippleButton<Model, F> {
     pub fn new(
         background: imgui::ImColor32,
         style: Style,
         on_click: F,
         children: Vec<Box<dyn Element<Model>>>,
     ) -> Box<Self> {
-        Box::new(RectangleRippleButton {
+        Box::new(RippleButton {
             flex: FlexElement {
                 children,
                 color: background,
@@ -133,27 +142,19 @@ impl<Model, F: 'static + Fn()> RectangleRippleButton<Model, F> {
     }
 }
 
-impl<Model, F: 'static + Fn()> Element<Model> for RectangleRippleButton<Model, F> {
+impl<Model, F: 'static + Fn(&mut Model)> Element<Model> for RippleButton<Model, F> {
     fn layout(&mut self, stretch: &mut Stretch, model: &mut Model) -> Result<Node, Error> {
         self.flex.layout(stretch, model)
     }
 
     fn render(&mut self, stretch: &Stretch, ui: &Ui, model: &mut Model) {
-        let layout = self.flex.last_layout(stretch);
-
         self.flex.render_children(stretch, ui, model);
 
-        let p1 = [layout.location.x, layout.location.y];
-        let p2 = [
-            layout.location.x + layout.size.width,
-            layout.location.y + layout.size.height,
-        ];
+        let [p1, p2, size] = self.flex.get_layout_points(stretch);
 
         ui.set_cursor_pos(p1);
 
-        let id = im_str!("Test Sized");
-
-        ChildWindow::new(id).size(p2).build(ui, || {
+        ChildWindow::new(rand_im_id()).size(size).build(ui, || {
             let dl = ui.get_window_draw_list();
 
             dl.add_rect(p1, p2, self.flex.color).filled(true).build();
@@ -175,7 +176,7 @@ impl<Model, F: 'static + Fn()> Element<Model> for RectangleRippleButton<Model, F
             let y = (pos[1] - p1[1]) / (p2[1] - p1[1]);
             self.ripples.push_front(Ripple::new(x, y));
             self.active = true;
-            (self.on_click)();
+            (self.on_click)(model);
         }
 
         if ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_BLOCKED_BY_ACTIVE_ITEM) {
@@ -206,5 +207,58 @@ impl<Model, F: 'static + Fn()> Element<Model> for RectangleRippleButton<Model, F
                 }
             }
         }
+    }
+}
+
+pub struct ToggleButton<
+    Model,
+    FClick: 'static + Fn(&mut Model),
+    FSelected: 'static + Fn(&mut Model) -> bool,
+> {
+    ripple_button: Box<RippleButton<Model, FClick>>,
+    get_selected: FSelected,
+    selected_col: ImColor32,
+    background: ImColor32,
+}
+
+impl<Model, FClick: 'static + Fn(&mut Model), FSelected: 'static + Fn(&mut Model) -> bool>
+    ToggleButton<Model, FClick, FSelected>
+{
+    pub fn new(
+        background: ImColor32,
+        selected_col: ImColor32,
+        style: Style,
+        get_selected: FSelected,
+        on_click: FClick,
+        children: Vec<Box<dyn Element<Model>>>,
+    ) -> Box<Self> {
+        Box::new(ToggleButton {
+            ripple_button: RippleButton::new(ImColor32::TRANSPARENT, style, on_click, children),
+            get_selected,
+            selected_col,
+            background,
+        })
+    }
+}
+
+impl<Model, FClick: 'static + Fn(&mut Model), FSelected: 'static + Fn(&mut Model) -> bool>
+    Element<Model> for ToggleButton<Model, FClick, FSelected>
+{
+    fn layout(&mut self, stretch: &mut Stretch, model: &mut Model) -> Result<Node, Error> {
+        self.ripple_button.layout(stretch, model)
+    }
+
+    fn render(&mut self, stretch: &Stretch, ui: &Ui, model: &mut Model) {
+        let [p1, p2, _] = self.ripple_button.flex.get_layout_points(stretch);
+
+        {
+            let dl = ui.get_window_draw_list();
+            dl.add_rect(p1, p2, self.background).filled(true).build();
+            if (self.get_selected)(model) {
+                dl.add_rect(p1, p2, self.selected_col).filled(true).build();
+            }
+        }
+
+        self.ripple_button.render(stretch, ui, model);
     }
 }
