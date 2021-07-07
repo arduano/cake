@@ -1,5 +1,4 @@
 use std::{
-    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -12,10 +11,10 @@ use winit::window::Window;
 
 use crate::application::ApplicationGraphics;
 
-pub trait DisplayWindow<Model, Ev> {
+pub trait DisplayWindow {
     fn init_imgui(&mut self, imgui: &mut Context);
 
-    // fn create_window(&self, instance: &Instance, event_loop: &EventLoop<Ev>) -> WindowData;
+    // fn create_window(&self, instance: &Instance, event_loop: &EventLoop) -> WindowData;
     fn window_data(&self) -> &WindowData;
     fn window_data_mut(&mut self) -> &mut WindowData;
 
@@ -26,7 +25,6 @@ pub trait DisplayWindow<Model, Ev> {
     fn create_swapchain(
         &self,
         graphics: &ApplicationGraphics,
-        _model: &Arc<Mutex<Box<Model>>>,
     ) -> SwapChain {
         let data = self.window_data();
         let (window, surface) = (&data.window, &data.surface);
@@ -47,9 +45,8 @@ pub trait DisplayWindow<Model, Ev> {
     fn create_and_set_swapchain(
         &mut self,
         graphics: &ApplicationGraphics,
-        model: &Arc<Mutex<Box<Model>>>,
     ) {
-        self.window_data_mut().swap_chain = Some(self.create_swapchain(graphics, model));
+        self.window_data_mut().swap_chain = Some(self.create_swapchain(graphics));
     }
 
     fn reset_swapchain(&mut self) {
@@ -60,7 +57,6 @@ pub trait DisplayWindow<Model, Ev> {
         &mut self,
         graphics: &mut ApplicationGraphics,
         imgui_context: &mut ImGuiDisplayContext,
-        model: &Arc<Mutex<Box<Model>>>,
         imgui: &mut Context,
         delta: Duration,
     );

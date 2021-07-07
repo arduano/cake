@@ -1,7 +1,4 @@
-use std::{
-    collections::VecDeque,
-    sync::{Arc, Mutex},
-};
+use std::collections::VecDeque;
 
 use imgui::{im_str, ChildWindow, ImColor32, ItemHoveredFlags, MouseButton, MouseCursor, Ui};
 use stretch::{
@@ -14,13 +11,9 @@ use stretch::{
 use crate::{animation::OneWayEase, util::Lerp};
 
 pub trait Element<Model> {
-    fn layout(
-        &mut self,
-        stretch: &mut Stretch,
-        model: &Arc<Mutex<Box<Model>>>,
-    ) -> Result<Node, Error>;
+    fn layout(&mut self, stretch: &mut Stretch, model: &mut Model) -> Result<Node, Error>;
 
-    fn render(&mut self, stretch: &Stretch, ui: &Ui, model: &Arc<Mutex<Box<Model>>>);
+    fn render(&mut self, stretch: &Stretch, ui: &Ui, model: &mut Model);
 }
 
 pub struct FlexElement<Model> {
@@ -50,7 +43,7 @@ impl<Model> FlexElement<Model> {
             .expect("Layout computation failed")
     }
 
-    fn render_children(&mut self, stretch: &Stretch, ui: &Ui, model: &Arc<Mutex<Box<Model>>>) {
+    fn render_children(&mut self, stretch: &Stretch, ui: &Ui, model: &mut Model) {
         for c in self.children.iter_mut() {
             c.render(stretch, ui, model);
         }
@@ -58,11 +51,7 @@ impl<Model> FlexElement<Model> {
 }
 
 impl<Model> Element<Model> for FlexElement<Model> {
-    fn layout(
-        &mut self,
-        stretch: &mut Stretch,
-        model: &Arc<Mutex<Box<Model>>>,
-    ) -> Result<Node, Error> {
+    fn layout(&mut self, stretch: &mut Stretch, model: &mut Model) -> Result<Node, Error> {
         let mut children = Vec::new();
         for c in self.children.iter_mut() {
             children.push(c.layout(stretch, model)?);
@@ -74,7 +63,7 @@ impl<Model> Element<Model> for FlexElement<Model> {
         Ok(node)
     }
 
-    fn render(&mut self, stretch: &Stretch, ui: &Ui, model: &Arc<Mutex<Box<Model>>>) {
+    fn render(&mut self, stretch: &Stretch, ui: &Ui, model: &mut Model) {
         let layout = self.last_layout(stretch);
         ui.get_window_draw_list()
             .add_rect(
@@ -145,15 +134,11 @@ impl<Model, F: 'static + Fn()> RectangleRippleButton<Model, F> {
 }
 
 impl<Model, F: 'static + Fn()> Element<Model> for RectangleRippleButton<Model, F> {
-    fn layout(
-        &mut self,
-        stretch: &mut Stretch,
-        model: &Arc<Mutex<Box<Model>>>,
-    ) -> Result<Node, Error> {
+    fn layout(&mut self, stretch: &mut Stretch, model: &mut Model) -> Result<Node, Error> {
         self.flex.layout(stretch, model)
     }
 
-    fn render(&mut self, stretch: &Stretch, ui: &Ui, model: &Arc<Mutex<Box<Model>>>) {
+    fn render(&mut self, stretch: &Stretch, ui: &Ui, model: &mut Model) {
         let layout = self.flex.last_layout(stretch);
 
         self.flex.render_children(stretch, ui, model);

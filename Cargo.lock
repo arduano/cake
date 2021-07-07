@@ -154,9 +154,11 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "bytemuck",
+ "cake-backend",
  "cake-gui",
  "cake-midi",
  "cake-util",
+ "cake-view",
  "futures",
  "image",
  "imgui",
@@ -168,6 +170,13 @@ dependencies = [
  "wgpu",
  "wgpu-subscriber",
  "winit",
+]
+
+[[package]]
+name = "cake-backend"
+version = "0.1.0"
+dependencies = [
+ "cake-midi",
 ]
 
 [[package]]
@@ -196,6 +205,21 @@ dependencies = [
 [[package]]
 name = "cake-util"
 version = "0.1.0"
+
+[[package]]
+name = "cake-view"
+version = "0.1.0"
+dependencies = [
+ "cake-backend",
+ "cake-gui",
+ "cake-midi",
+ "cake-util",
+ "imgui",
+ "imgui-wgpu",
+ "stretch",
+ "wgpu",
+ "winit",
+]
 
 [[package]]
 name = "calloop"

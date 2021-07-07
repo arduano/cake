@@ -5,6 +5,8 @@ members = [
     "src/gui",
     "src/midi",
     "src/util",
+    "src/backend",
+    "src/view",
 ]
 
 [profile.release]

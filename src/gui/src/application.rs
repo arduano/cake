@@ -1,11 +1,11 @@
 use std::{
     collections::{hash_map::Keys, HashMap},
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Instant,
 };
 
 use futures::executor::block_on;
-use imgui::{Context};
+use imgui::Context;
 use imgui_wgpu::{Renderer, RendererConfig};
 use imgui_winit_support::WinitPlatform;
 use wgpu::{Adapter, Device, Instance, Queue};
@@ -65,15 +65,15 @@ impl ApplicationGraphics {
     }
 }
 
-struct OpenDisplayWindow<Model, Ev> {
-    window: Box<dyn DisplayWindow<Model, Ev>>,
+struct OpenDisplayWindow {
+    window: Box<dyn DisplayWindow>,
     imgui: ImGuiDisplayContext,
     last_frame: Instant,
 }
 
-impl<Model, Ev> OpenDisplayWindow<Model, Ev> {
+impl OpenDisplayWindow {
     pub fn new(
-        window: Box<dyn DisplayWindow<Model, Ev>>,
+        window: Box<dyn DisplayWindow>,
         imgui: &mut Context,
         graphics: &ApplicationGraphics,
     ) -> Self {
@@ -104,23 +104,17 @@ impl<Model, Ev> OpenDisplayWindow<Model, Ev> {
         self.window.window_data().window.id()
     }
 
-    pub fn render(
-        &mut self,
-        graphics: &mut ApplicationGraphics,
-        imgui: &mut Context,
-        model: &Arc<Mutex<Box<Model>>>,
-    ) {
+    pub fn render(&mut self, graphics: &mut ApplicationGraphics, imgui: &mut Context) {
         let now = Instant::now();
         let delta = now - self.last_frame;
         self.last_frame = now;
 
         let imgui_context = &mut self.imgui;
 
-        self.window
-            .render(graphics, imgui_context, model, imgui, delta);
+        self.window.render(graphics, imgui_context, imgui, delta);
     }
 
-    pub fn handle_platform_event(&mut self, imgui: &mut Context, event: &Event<Ev>) {
+    pub fn handle_platform_event(&mut self, imgui: &mut Context, event: &Event<()>) {
         let imgui_context = &mut self.imgui;
         let platform = &mut imgui_context.platform;
 
@@ -133,20 +127,20 @@ impl<Model, Ev> OpenDisplayWindow<Model, Ev> {
     }
 }
 
-struct WindowMap<Model, Ev> {
-    window_map: HashMap<WindowId, OpenDisplayWindow<Model, Ev>>,
+struct WindowMap {
+    window_map: HashMap<WindowId, OpenDisplayWindow>,
 }
 
-impl<Model, Ev> WindowMap<Model, Ev> {
+impl WindowMap {
     pub fn new() -> Self {
         WindowMap {
-            window_map: HashMap::<WindowId, OpenDisplayWindow<Model, Ev>>::new(),
+            window_map: HashMap::<WindowId, OpenDisplayWindow>::new(),
         }
     }
 
     pub fn insert(
         &mut self,
-        window: Box<dyn DisplayWindow<Model, Ev>>,
+        window: Box<dyn DisplayWindow>,
         imgui: &mut Context,
         graphics: &ApplicationGraphics,
     ) {
@@ -158,31 +152,30 @@ impl<Model, Ev> WindowMap<Model, Ev> {
     //     self.window_map.remove(id);
     // }
 
-    pub fn get(&self, id: &WindowId) -> Option<&OpenDisplayWindow<Model, Ev>> {
+    pub fn get(&self, id: &WindowId) -> Option<&OpenDisplayWindow> {
         self.window_map.get(id)
     }
 
-    pub fn get_mut(&mut self, id: &WindowId) -> Option<&mut OpenDisplayWindow<Model, Ev>> {
+    pub fn get_mut(&mut self, id: &WindowId) -> Option<&mut OpenDisplayWindow> {
         self.window_map.get_mut(id)
     }
 
-    pub fn keys(&self) -> Keys<WindowId, OpenDisplayWindow<Model, Ev>> {
+    pub fn keys(&self) -> Keys<WindowId, OpenDisplayWindow> {
         self.window_map.keys()
     }
 }
 
-pub fn run_application<Model, Ev: 'static + Copy + Send>(
+pub fn run_application<W: 'static + DisplayWindow>(
     mut graphics: ApplicationGraphics,
-    mut event_loop: EventLoop<Ev>,
-    model: Arc<Mutex<Box<Model>>>,
-    main_window: Box<dyn DisplayWindow<Model, Ev>>,
+    mut event_loop: EventLoop<()>,
+    main_window: W,
 ) {
     let mut imgui = imgui::Context::create();
     imgui.set_ini_filename(None);
 
     let mut window_map = WindowMap::new();
 
-    window_map.insert(main_window, &mut imgui, &graphics);
+    window_map.insert(Box::new(main_window), &mut imgui, &graphics);
 
     // let event_pipe = Arc::new(Mutex::new(event_loop.create_proxy()));
 
@@ -220,7 +213,7 @@ pub fn run_application<Model, Ev: 'static + Copy + Send>(
             Event::RedrawRequested(window_id) => {
                 let window_data = window_map.get_mut(&window_id).unwrap();
 
-                window_data.render(&mut graphics, &mut imgui, &model);
+                window_data.render(&mut graphics, &mut imgui);
             }
             _ => (),
         }
