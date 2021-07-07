@@ -1,6 +1,6 @@
 use std::{
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration},
 };
 
 use gui::{
@@ -8,14 +8,15 @@ use gui::{
     elements::Element,
     window::{DisplayWindow, ImGuiDisplayContext, WindowData},
 };
-use imgui::{im_str, Condition, Context, FontSource, StyleVar};
+use imgui::{im_str, Condition, StyleVar};
 use model::CakeModel;
 use stretch::number::Number;
 use wgpu::Instance;
 use winit::{dpi::LogicalSize, event_loop::EventLoop, window::WindowBuilder};
 
-use crate::windows::main::MainWindowElement;
+use crate::{model::Fonts, windows::main::MainWindowElement};
 
+mod macros;
 mod model;
 mod windows;
 
@@ -45,13 +46,16 @@ impl CakeWindow {
 
         let mut graphics = ApplicationGraphics::create(instance, &window_data);
 
-        let mut imgui =
-            ImGuiDisplayContext::new(&graphics, &window_data, wgpu::TextureFormat::Bgra8UnormSrgb);
+        let hidpi_factor = window_data.window.scale_factor();
 
-        let model = Arc::new(Mutex::new(CakeModel::new(
-            &mut imgui.renderer,
-            &mut graphics,
-        )));
+        let (mut imgui, fonts) = ImGuiDisplayContext::new(
+            &graphics,
+            &window_data,
+            wgpu::TextureFormat::Bgra8UnormSrgb,
+            |mut imgui| Fonts::load(&mut imgui, hidpi_factor),
+        );
+
+        let model = Arc::new(Mutex::new(CakeModel::new(&mut imgui, &mut graphics, fonts)));
 
         let main_window_element = MainWindowElement::new(&model);
 
@@ -66,23 +70,6 @@ impl CakeWindow {
 }
 
 impl DisplayWindow for CakeWindow {
-    fn init_imgui(&mut self, imgui: &mut Context) {
-        let hidpi_factor = self.window_data.window.scale_factor();
-        let font_size = (16.0 * hidpi_factor) as f32;
-        imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
-
-        imgui.fonts().add_font(&[FontSource::TtfData {
-            data: include_bytes!("data/OpenSans-Regular.ttf"),
-            config: Some(imgui::FontConfig {
-                oversample_h: 4,
-                pixel_snap_h: true,
-                size_pixels: font_size,
-                ..Default::default()
-            }),
-            size_pixels: font_size,
-        }]);
-    }
-
     fn window_data(&self) -> &WindowData {
         &self.window_data
     }
@@ -96,11 +83,11 @@ impl DisplayWindow for CakeWindow {
             self.window_data.create_and_set_swapchain(&self.graphics);
         }
 
+        let swap_chain = self.window_data.swap_chain.as_ref().unwrap();
+
         let imgui = &mut self.imgui.imgui;
 
         imgui.io_mut().update_delta_time(delta);
-
-        let swap_chain = self.window_data.swap_chain.as_ref().unwrap();
 
         let frame = match swap_chain.get_current_frame() {
             Ok(frame) => frame,
@@ -126,15 +113,15 @@ impl DisplayWindow for CakeWindow {
         // Store the new size of Image() or None to indicate that the window is collapsed.
         let mut new_example_size: Option<[f32; 2]> = None;
 
+        let mut model_locked = self.model.lock().unwrap();
+        let main_window_element = &mut self.main_window_element;
+
+        let default_font = ui.push_font(model_locked.view.fonts.open_sans_16);
+
         let nopadding = ui.push_style_vars(&[
             StyleVar::WindowPadding([-1.0, -1.0]),
             StyleVar::WindowBorderSize(0.0),
         ]);
-
-        let mut model_locked = self.model.lock().unwrap();
-        let main_window_element = &mut self.main_window_element;
-
-        let view_model = &mut model_locked.view;
 
         imgui::Window::new(im_str!("Root"))
             .no_nav()
@@ -152,7 +139,7 @@ impl DisplayWindow for CakeWindow {
             .build(&ui, || {
                 let mut stretch = stretch::node::Stretch::new();
                 let node = main_window_element
-                    .layout(&mut stretch, view_model)
+                    .layout(&mut stretch, &mut model_locked)
                     .expect("Failed to retreive layout!");
                 let window_size = ui.window_size();
                 stretch
@@ -164,7 +151,7 @@ impl DisplayWindow for CakeWindow {
                         },
                     )
                     .expect("Failed to compute layout!");
-                main_window_element.render([0.0, 0.0], &stretch, &ui, view_model);
+                main_window_element.render([0.0, 0.0], &stretch, &ui, &mut model_locked);
             });
 
         nopadding.pop(&ui);
@@ -174,12 +161,14 @@ impl DisplayWindow for CakeWindow {
             .build(&ui, || {
                 new_example_size = Some(ui.content_region_avail());
                 ui.text("Hello World!");
-                ui.text(format!("Fps: {}", view_model.fps.fps()));
+                ui.text(format!("Fps: {}", model_locked.view.fps.fps()));
                 // if ui.is_window_hovered() {
                 //     ui.set_mouse_cursor(Some(MouseCursor::Hand));
                 // }
                 // imgui::Image::new(example_texture_id, new_example_size.unwrap()).build(&ui);
             });
+
+        default_font.pop(&ui);
 
         let mut encoder: wgpu::CommandEncoder = self
             .graphics
@@ -199,10 +188,10 @@ impl DisplayWindow for CakeWindow {
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.1,
-                        g: 0.2,
-                        b: 0.3,
-                        a: 0.1, // semi-transparent background
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 0.0,
                     }),
                     store: true,
                 },
@@ -228,7 +217,7 @@ impl DisplayWindow for CakeWindow {
 
         self.graphics.queue().submit(Some(encoder.finish()));
 
-        view_model.fps.count_frame();
+        model_locked.view.fps.count_frame();
     }
 
     fn handle_platform_event(&mut self, event: &winit::event::Event<()>) {

@@ -1,6 +1,6 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, ops::Deref};
 
-use imgui::{ChildWindow, ImColor32, ItemHoveredFlags, MouseButton, MouseCursor, Ui};
+use imgui::{ChildWindow, Id, ImColor32, ItemHoveredFlags, MouseButton, MouseCursor, Ui};
 use stretch::{
     node::{Node, Stretch},
     result::Layout,
@@ -75,14 +75,34 @@ impl<Model> Element<Model> for FlexElement<Model> {
     }
 }
 
+pub struct FGetCol<Model>(Box<dyn Fn(&mut Model) -> imgui::ImColor32>);
+impl<Model> FGetCol<Model> {
+    pub fn new<T: 'static + Fn(&mut Model) -> imgui::ImColor32>(f: T) -> Self {
+        Self(Box::new(f))
+    }
+}
+impl<Model> Deref for FGetCol<Model> {
+    type Target = Box<dyn Fn(&mut Model) -> imgui::ImColor32>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<Model> Into<FGetCol<Model>> for imgui::ImColor32 {
+    fn into(self) -> FGetCol<Model> {
+        FGetCol(Box::new(move |_| self))
+    }
+}
+
 pub struct FlexColorElement<Model> {
     flex: FlexElement<Model>,
-    color: imgui::ImColor32,
+    color: FGetCol<Model>,
 }
 
 impl<Model> FlexColorElement<Model> {
-    pub fn new(
-        color: imgui::ImColor32,
+    pub fn new<FCol: Into<FGetCol<Model>>>(
+        color: FCol,
         style: Style,
         children: Vec<Box<dyn Element<Model>>>,
     ) -> Box<Self> {
@@ -92,7 +112,7 @@ impl<Model> FlexColorElement<Model> {
                 style,
                 last_layout: None,
             },
-            color,
+            color: color.into(),
         })
     }
 
@@ -119,9 +139,74 @@ impl<Model> Element<Model> for FlexColorElement<Model> {
     fn render(&mut self, anchor: [f32; 2], stretch: &Stretch, ui: &Ui, model: &mut Model) {
         let [p1, p2, _] = self.flex.get_layout_points(anchor, stretch);
         ui.get_window_draw_list()
-            .add_rect(p1, p2, self.color)
+            .add_rect(p1, p2, (self.color)(model))
             .filled(true)
             .build();
+
+        self.flex.render_children(p1, stretch, ui, model);
+    }
+}
+
+pub struct FlexMultiColorElement<Model> {
+    flex: FlexElement<Model>,
+    color_tl: FGetCol<Model>,
+    color_tr: FGetCol<Model>,
+    color_br: FGetCol<Model>,
+    color_bl: FGetCol<Model>,
+}
+
+impl<Model> FlexMultiColorElement<Model> {
+    pub fn new<FCol: Into<FGetCol<Model>>>(
+        color_tl: FCol,
+        color_tr: FCol,
+        color_br: FCol,
+        color_bl: FCol,
+        style: Style,
+        children: Vec<Box<dyn Element<Model>>>,
+    ) -> Box<Self> {
+        Box::new(FlexMultiColorElement {
+            flex: FlexElement {
+                children,
+                style,
+                last_layout: None,
+            },
+            color_tl: color_tl.into(),
+            color_tr: color_tr.into(),
+            color_br: color_br.into(),
+            color_bl: color_bl.into(),
+        })
+    }
+
+    pub fn render_children(
+        &mut self,
+        anchor: [f32; 2],
+        stretch: &Stretch,
+        ui: &Ui,
+        model: &mut Model,
+    ) {
+        self.flex.render_children(anchor, stretch, ui, model)
+    }
+
+    pub fn get_layout_points(&self, anchor: [f32; 2], stretch: &Stretch) -> [[f32; 2]; 3] {
+        self.flex.get_layout_points(anchor, stretch)
+    }
+}
+
+impl<Model> Element<Model> for FlexMultiColorElement<Model> {
+    fn layout(&mut self, stretch: &mut Stretch, model: &mut Model) -> Result<Node, Error> {
+        self.flex.layout(stretch, model)
+    }
+
+    fn render(&mut self, anchor: [f32; 2], stretch: &Stretch, ui: &Ui, model: &mut Model) {
+        let [p1, p2, _] = self.flex.get_layout_points(anchor, stretch);
+        ui.get_window_draw_list().add_rect_filled_multicolor(
+            p1,
+            p2,
+            (self.color_tl)(model),
+            (self.color_tr)(model),
+            (self.color_br)(model),
+            (self.color_bl)(model),
+        );
 
         self.flex.render_children(p1, stretch, ui, model);
     }
@@ -154,20 +239,21 @@ pub struct RippleButton<Model, F: 'static + Fn(&mut Model)> {
     flex: FlexColorElement<Model>,
     ripples: VecDeque<Ripple>,
     active: bool,
+    id: Id<'static>,
 
     on_click: F,
 }
 
 impl<Model, F: 'static + Fn(&mut Model)> RippleButton<Model, F> {
-    pub fn new(
-        background: imgui::ImColor32,
+    pub fn new<FCol: Into<FGetCol<Model>>>(
+        background: FCol,
         style: Style,
         on_click: F,
         children: Vec<Box<dyn Element<Model>>>,
     ) -> Box<Self> {
         Box::new(RippleButton {
             flex: FlexColorElement {
-                color: background,
+                color: background.into(),
                 flex: {
                     FlexElement {
                         children,
@@ -176,6 +262,7 @@ impl<Model, F: 'static + Fn(&mut Model)> RippleButton<Model, F> {
                     }
                 },
             },
+            id: rand_im_id(),
             ripples: VecDeque::new(),
             active: false,
             on_click,
@@ -195,10 +282,12 @@ impl<Model, F: 'static + Fn(&mut Model)> Element<Model> for RippleButton<Model, 
 
         ui.set_cursor_pos(p1);
 
-        ChildWindow::new(rand_im_id()).size(size).build(ui, || {
+        ChildWindow::new(self.id).size(size).build(ui, || {
             let dl = ui.get_window_draw_list();
 
-            dl.add_rect(p1, p2, self.flex.color).filled(true).build();
+            dl.add_rect(p1, p2, (self.flex.color)(model))
+                .filled(true)
+                .build();
 
             for r in self.ripples.iter() {
                 dl.add_circle(
@@ -258,16 +347,16 @@ pub struct ToggleButton<
 > {
     ripple_button: Box<RippleButton<Model, FClick>>,
     get_selected: FSelected,
-    selected_col: ImColor32,
-    background: ImColor32,
+    selected_col: FGetCol<Model>,
+    background: FGetCol<Model>,
 }
 
 impl<Model, FClick: 'static + Fn(&mut Model), FSelected: 'static + Fn(&mut Model) -> bool>
     ToggleButton<Model, FClick, FSelected>
 {
-    pub fn new(
-        background: ImColor32,
-        selected_col: ImColor32,
+    pub fn new<FCol1: Into<FGetCol<Model>>, FCol2: Into<FGetCol<Model>>>(
+        background: FCol1,
+        selected_col: FCol2,
         style: Style,
         get_selected: FSelected,
         on_click: FClick,
@@ -276,8 +365,8 @@ impl<Model, FClick: 'static + Fn(&mut Model), FSelected: 'static + Fn(&mut Model
         Box::new(ToggleButton {
             ripple_button: RippleButton::new(ImColor32::TRANSPARENT, style, on_click, children),
             get_selected,
-            selected_col,
-            background,
+            selected_col: selected_col.into(),
+            background: background.into(),
         })
     }
 }
@@ -294,9 +383,13 @@ impl<Model, FClick: 'static + Fn(&mut Model), FSelected: 'static + Fn(&mut Model
 
         {
             let dl = ui.get_window_draw_list();
-            dl.add_rect(p1, p2, self.background).filled(true).build();
+            dl.add_rect(p1, p2, (self.background)(model))
+                .filled(true)
+                .build();
             if (self.get_selected)(model) {
-                dl.add_rect(p1, p2, self.selected_col).filled(true).build();
+                dl.add_rect(p1, p2, (self.selected_col)(model))
+                    .filled(true)
+                    .build();
             }
         }
 
@@ -304,14 +397,34 @@ impl<Model, FClick: 'static + Fn(&mut Model), FSelected: 'static + Fn(&mut Model
     }
 }
 
+pub struct FGetTex<Model>(Box<dyn Fn(&mut Model) -> imgui::TextureId>);
+impl<Model> FGetTex<Model> {
+    pub fn new<T: 'static + Fn(&mut Model) -> imgui::TextureId>(f: T) -> Self {
+        Self(Box::new(f))
+    }
+}
+impl<Model> Deref for FGetTex<Model> {
+    type Target = Box<dyn Fn(&mut Model) -> imgui::TextureId>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<Model> Into<FGetTex<Model>> for imgui::TextureId {
+    fn into(self) -> FGetTex<Model> {
+        FGetTex(Box::new(move |_| self))
+    }
+}
+
 pub struct FlexImageElement<Model> {
     flex: FlexElement<Model>,
-    texture: imgui::TextureId,
+    texture: FGetTex<Model>,
 }
 
 impl<Model> FlexImageElement<Model> {
-    pub fn new(
-        texture: imgui::TextureId,
+    pub fn new<FTex: Into<FGetTex<Model>>>(
+        texture: FTex,
         style: Style,
         children: Vec<Box<dyn Element<Model>>>,
     ) -> Box<Self> {
@@ -321,7 +434,7 @@ impl<Model> FlexImageElement<Model> {
                 style,
                 last_layout: None,
             },
-            texture,
+            texture: texture.into(),
         })
     }
 
@@ -349,7 +462,7 @@ impl<Model> Element<Model> for FlexImageElement<Model> {
         let [p1, _, size] = self.flex.get_layout_points(anchor, stretch);
 
         ui.set_cursor_pos(p1);
-        imgui::Image::new(self.texture, size).build(&ui);
+        imgui::Image::new((self.texture)(model), size).build(&ui);
 
         self.flex.render_children(p1, stretch, ui, model);
     }

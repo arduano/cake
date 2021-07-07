@@ -10,8 +10,6 @@ use winit::window::Window;
 use crate::application::ApplicationGraphics;
 
 pub trait DisplayWindow {
-    fn init_imgui(&mut self, imgui: &mut Context);
-
     // fn create_window(&self, instance: &Instance, event_loop: &EventLoop) -> WindowData;
     fn window_data(&self) -> &WindowData;
     fn window_data_mut(&mut self) -> &mut WindowData;
@@ -73,11 +71,12 @@ pub struct ImGuiDisplayContext {
 }
 
 impl ImGuiDisplayContext {
-    pub fn new(
+    pub fn new<Fonts, MakeFonts: FnOnce(&mut Context) -> Fonts>(
         graphics: &ApplicationGraphics,
         window: &WindowData,
         swapchain_format: TextureFormat,
-    ) -> Self {
+        make_fonts: MakeFonts,
+    ) -> (Self, Fonts) {
         let mut imgui = imgui::Context::create();
         imgui.set_ini_filename(None);
 
@@ -87,6 +86,8 @@ impl ImGuiDisplayContext {
             &window.window,
             imgui_winit_support::HiDpiMode::Default,
         );
+
+        let fonts = make_fonts(&mut imgui);
 
         let renderer_config = RendererConfig {
             texture_format: swapchain_format,
@@ -100,10 +101,13 @@ impl ImGuiDisplayContext {
             renderer_config,
         );
 
-        ImGuiDisplayContext {
-            imgui,
-            platform,
-            renderer,
-        }
+        (
+            ImGuiDisplayContext {
+                imgui,
+                platform,
+                renderer,
+            },
+            fonts,
+        )
     }
 }

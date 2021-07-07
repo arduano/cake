@@ -73,3 +73,19 @@ pub fn load_image_texture(
 
     texture_id
 }
+
+pub trait ToImColor {
+    fn to_imcolor(&self) -> ImColor32;
+}
+
+impl ToImColor for color::Rgba {
+    fn to_imcolor(&self) -> ImColor32 {
+        ImColor32::from_rgba(self.c.r, self.c.g, self.c.b, self.a)
+    }
+}
+
+impl ToImColor for color::Rgb {
+    fn to_imcolor(&self) -> ImColor32 {
+        ImColor32::from_rgba(self.r, self.g, self.b, 255)
+    }
+}

@@ -183,6 +183,7 @@ dependencies = [
 name = "cake-gui"
 version = "0.1.0"
 dependencies = [
+ "color-rs",
  "futures",
  "image",
  "imgui",
@@ -215,6 +216,7 @@ dependencies = [
  "cake-gui",
  "cake-midi",
  "cake-util",
+ "color-rs",
  "image",
  "imgui",
  "imgui-wgpu",

@@ -12,6 +12,9 @@ macro_rules! d {
     ( undef ) => {
         stretch::style::Dimension::Undefined
     };
+    ( $x:expr ) => {
+        d!($x, px)
+    };
 }
 
 #[macro_export]
@@ -32,7 +35,7 @@ macro_rules! rect {
             end: $hor,
         }
     };
-    ( $top:expr, $right:expr, $bottom:expr, $left:expr,  ) => {
+    ( $top:expr, $right:expr, $bottom:expr, $left:expr ) => {
         stretch::geometry::Rect {
             top: $top,
             bottom: $bottom,
@@ -132,13 +135,13 @@ macro_rules! rgba {
 #[macro_export]
 macro_rules! rgbf {
     ( $r:expr, $g:expr, $b:expr ) => {
-        imgui::ImColor32::from_rgb_f32s($r, $g, $b)
+        imgui::ImColor32::from_rgb_f32s($r as f32, $g as f32, $b as f32)
     };
 }
 
 #[macro_export]
 macro_rules! rgbaf {
     ( $r:expr, $g:expr, $b:expr, $a:expr ) => {
-        imgui::ImColor32::from_rgba_f32s($r, $g, $b, $a)
+        imgui::ImColor32::from_rgba_f32s($r as f32, $g as f32, $b as f32, $a as f32)
     };
 }
