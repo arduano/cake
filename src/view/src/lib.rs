@@ -1,6 +1,6 @@
 use std::{
     sync::{Arc, Mutex},
-    time::{Duration},
+    time::Duration,
 };
 
 use gui::{
@@ -18,6 +18,7 @@ use crate::{model::Fonts, windows::main::MainWindowElement};
 
 mod macros;
 mod model;
+mod renderer;
 mod windows;
 
 pub struct CakeWindow {
@@ -153,6 +154,16 @@ impl DisplayWindow for CakeWindow {
                     .expect("Failed to compute layout!");
                 main_window_element.render([0.0, 0.0], &stretch, &ui, &mut model_locked);
             });
+
+        {
+            let renderer = &mut model_locked.view.renderer;
+            renderer.update_to_last_size(
+                &mut self.imgui.renderer,
+                &self.graphics,
+                &ui.io().display_framebuffer_scale,
+            );
+            renderer.render(&mut self.imgui.renderer, &self.graphics);
+        }
 
         nopadding.pop(&ui);
 

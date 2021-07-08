@@ -212,6 +212,7 @@ version = "0.1.0"
 name = "cake-view"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "cake-backend",
  "cake-gui",
  "cake-midi",
@@ -220,6 +221,7 @@ dependencies = [
  "image",
  "imgui",
  "imgui-wgpu",
+ "shaderc",
  "stretch",
  "wgpu",
  "winit",

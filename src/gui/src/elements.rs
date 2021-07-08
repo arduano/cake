@@ -20,9 +20,9 @@ pub trait Element<Model> {
 }
 
 pub struct FlexElement<Model> {
-    children: Vec<Box<dyn Element<Model>>>,
-    style: Style,
-    last_layout: Option<Node>,
+    pub children: Vec<Box<dyn Element<Model>>>,
+    pub style: Style,
+    pub last_layout: Option<Node>,
 }
 
 impl<Model> FlexElement<Model> {
@@ -34,13 +34,13 @@ impl<Model> FlexElement<Model> {
         })
     }
 
-    fn last_layout<'a>(&self, stretch: &'a Stretch) -> &'a Layout {
+    pub fn last_layout<'a>(&self, stretch: &'a Stretch) -> &'a Layout {
         stretch
             .layout(self.last_layout.unwrap())
             .expect("Layout computation failed")
     }
 
-    fn render_children(&mut self, anchor: [f32; 2], stretch: &Stretch, ui: &Ui, model: &mut Model) {
+    pub fn render_children(&mut self, anchor: [f32; 2], stretch: &Stretch, ui: &Ui, model: &mut Model) {
         for c in self.children.iter_mut() {
             c.render(anchor, stretch, ui, model);
         }

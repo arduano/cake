@@ -8,6 +8,7 @@ use gui::elements::Element;
 
 use crate::{
     model::CakeModel,
+    palette,
     windows::main::{header::MainWindowHeader, keyboard::MainWindowKeyboard, midi::MainWindowMidi},
 };
 
@@ -20,11 +21,9 @@ impl MainWindowElement {
         use gui::{d, elements::FlexColorElement, rgba, size, style};
         use stretch::style::{AlignItems, FlexDirection};
 
-        let model = model.clone();
-
         let flex = FlexColorElement::new(
-            // palette!(bg),
-            rgba!(0, 0, 0, 0),
+            palette!(bg),
+            // rgba!(0, 0, 0, 0),
             style!(size => size!(100, %; 100, %), flex_direction => FlexDirection::Column, align_items => AlignItems::Stretch),
             vec![
                 MainWindowHeader::new(&model),
