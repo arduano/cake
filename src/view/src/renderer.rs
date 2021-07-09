@@ -1,7 +1,4 @@
-use std::{mem::size_of, num::NonZeroU32};
-
 use bytemuck::{Pod, Zeroable};
-use midi::data::IntVector4;
 use wgpu::util::DeviceExt;
 
 #[repr(C)]
@@ -76,7 +73,7 @@ pub struct MidiRender {
 }
 
 impl MidiRender {
-    pub fn init(format: wgpu::TextureFormat, device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+    pub fn init(format: wgpu::TextureFormat, device: &wgpu::Device) -> Self {
         use std::mem;
 
         // Create the vertex and index buffers
@@ -136,69 +133,14 @@ impl MidiRender {
         )
         .unwrap();
 
-        let mut vec = midi.parse_all_tracks(16384).expect("MIDI parse failed");
+        let vec = midi.parse_all_tracks(16384).expect("MIDI parse failed");
 
-        let size = 8192u32;
-        let height = vec.len() as u32 / size + 1;
-
-        let full_len = size * height;
-        let offset = full_len - vec.len() as u32;
-
-        vec.extend((0..offset).map(|_| IntVector4::default()));
-
-        // Create the texture
-        // let texels = create_texels(size as usize);
-        let texture_extent = wgpu::Extent3d {
-            width: size,
-            height: height,
-            depth_or_array_layers: 1,
-        };
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: None,
-            size: texture_extent,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba32Sint,
-            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
-        });
-        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-            },
-            &bytemuck::cast_slice(&vec),
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: NonZeroU32::new(size_of::<IntVector4>() as u32 * size),
-                rows_per_image: None,
-            },
-            texture_extent,
-        );
-
-        // Create other resources
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
         let data_total = RenderUniform::default();
         let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Uniform Buffer"),
             usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
             contents: bytemuck::cast_slice(&[data_total, data_total, data_total, data_total]),
         });
-
-        // let mut f = File::open("./cake-cache.dat").expect("no file found");
-        // let metadata = fs::metadata("./cake-cache.dat").expect("unable to read metadata");
-        // let mut buffer = vec![0; metadata.len() as usize];
-        // f.read(&mut buffer).expect("buffer overflow");
 
         let cake_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Uniform Buffer"),

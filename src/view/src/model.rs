@@ -1,5 +1,4 @@
 use std::{
-    borrow::Borrow,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -108,7 +107,6 @@ impl CakeRenderer {
             renderer: MidiRender::init(
                 gui::window::WindowData::swapchain_texture_format(),
                 graphics.device(),
-                graphics.queue(),
             ),
             tex_size,
             texture_id,
@@ -154,8 +152,12 @@ impl CakeRenderer {
 
     pub fn render(&mut self, renderer: &mut Renderer, graphics: &ApplicationGraphics) {
         let tex = self.borrow_texture(renderer);
-        self.renderer
-            .render(tex.view(), graphics.device(), graphics.queue(), &self.last_size);
+        self.renderer.render(
+            tex.view(),
+            graphics.device(),
+            graphics.queue(),
+            &self.last_size,
+        );
     }
 }
 

@@ -25,11 +25,14 @@ impl ApplicationGraphics {
         }))
         .unwrap();
 
+        let mut limits = wgpu::Limits::default();
+        limits.max_storage_buffer_binding_size = u32::MAX;
+
         let (device, queue) = block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
                 label: None,
                 features: wgpu::Features::empty(),
-                limits: wgpu::Limits::default(),
+                limits,
             },
             None,
         ))
